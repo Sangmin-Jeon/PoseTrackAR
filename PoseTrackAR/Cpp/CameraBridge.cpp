@@ -8,7 +8,7 @@
 #include "CameraBridge.h"
 #include <stdio.h>
 
-void receiveIntrinsics(struct IntrinsicsC intr) {
+void receive_intrinsics(struct Intrinsics_C intr) {
     printf("[C++] fx: %.2f, fy: %.2f, cx: %.2f, cy: %.2f, width: %d, height: %d\n",
            intr.fx, intr.fy, intr.cx, intr.cy, intr.width, intr.height);
 }

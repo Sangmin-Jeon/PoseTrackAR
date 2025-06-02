@@ -8,7 +8,11 @@
 import SwiftUI
 
 struct ContentView: View {
+    @StateObject private var ins = ARSessionManager()
+    
     var body: some View {
-        EmptyView()
+        ZStack {
+            
+        }
     }
 }

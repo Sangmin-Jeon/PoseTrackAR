@@ -13,7 +13,7 @@ extern "C" {
 #endif
 
 // C에서 사용할 구조체
-struct IntrinsicsC {
+struct Intrinsics_C {
     float fx;
     float fy;
     float cx;
@@ -24,7 +24,7 @@ struct IntrinsicsC {
 };
 
 // C 함수 선언
-void receiveIntrinsics(struct IntrinsicsC intr);
+void receive_intrinsics(struct Intrinsics_C intr);
 
 #ifdef __cplusplus
 }

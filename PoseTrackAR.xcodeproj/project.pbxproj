@@ -7,12 +7,36 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		5CC44E5D2DEAFC5F000E159B /* PoseTrackAR.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PoseTrackAR.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5C2C9AC92DEDF01600FEA3C8 /* PoseTrackAR.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PoseTrackAR.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		5C2C9ACB2DEDF02100FEA3C8 /* Exceptions for "PoseTrackAR" folder in "PoseTrackAR" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 5CC44E5C2DEAFC5F000E159B /* PoseTrackAR */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+		5C2C9ACE2DEDFF1700FEA3C8 /* Exceptions for "PoseTrackAR" folder in "Compile Sources" phase from "PoseTrackAR" target */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = 5CC44E592DEAFC5F000E159B /* Sources */;
+			membershipExceptions = (
+				Bridge/CameraBridge.h,
+			);
+		};
+/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		5CC44E5F2DEAFC5F000E159B /* PoseTrackAR */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				5C2C9ACB2DEDF02100FEA3C8 /* Exceptions for "PoseTrackAR" folder in "PoseTrackAR" target */,
+				5C2C9ACE2DEDFF1700FEA3C8 /* Exceptions for "PoseTrackAR" folder in "Compile Sources" phase from "PoseTrackAR" target */,
+			);
 			path = PoseTrackAR;
 			sourceTree = "<group>";
 		};
@@ -33,16 +57,8 @@
 			isa = PBXGroup;
 			children = (
 				5CC44E5F2DEAFC5F000E159B /* PoseTrackAR */,
-				5CC44E5E2DEAFC5F000E159B /* Products */,
+				5C2C9AC92DEDF01600FEA3C8 /* PoseTrackAR.app */,
 			);
-			sourceTree = "<group>";
-		};
-		5CC44E5E2DEAFC5F000E159B /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				5CC44E5D2DEAFC5F000E159B /* PoseTrackAR.app */,
-			);
-			name = Products;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -67,7 +83,7 @@
 			packageProductDependencies = (
 			);
 			productName = PoseTrackAR;
-			productReference = 5CC44E5D2DEAFC5F000E159B /* PoseTrackAR.app */;
+			productReference = 5C2C9AC92DEDF01600FEA3C8 /* PoseTrackAR.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -95,7 +111,7 @@
 			mainGroup = 5CC44E542DEAFC5F000E159B;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
-			productRefGroup = 5CC44E5E2DEAFC5F000E159B /* Products */;
+			productRefGroup = 5CC44E542DEAFC5F000E159B;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -184,6 +200,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OBJC_BRIDGING_HEADER = "PoseTrackAR/PoseTrackAR-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
 			name = Debug;
@@ -240,6 +257,7 @@
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OBJC_BRIDGING_HEADER = "PoseTrackAR/PoseTrackAR-Bridging-Header.h";
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
@@ -255,11 +273,13 @@
 				DEVELOPMENT_TEAM = JH3P7U29VC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PoseTrackAR/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UIStatusBarStyle = "";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -268,6 +288,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = jeonsangmin.PoseTrackAR;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "PoseTrackAR/PoseTrackAR-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -284,11 +305,13 @@
 				DEVELOPMENT_TEAM = JH3P7U29VC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PoseTrackAR/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UIStatusBarStyle = "";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -297,6 +320,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = jeonsangmin.PoseTrackAR;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "PoseTrackAR/PoseTrackAR-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};

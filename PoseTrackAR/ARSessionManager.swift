@@ -43,16 +43,35 @@ class ARSessionManager: NSObject, ObservableObject {
 
 }
 
-extension CameraManager: ARSessionDelegate {
+extension ARSessionManager: ARSessionDelegate {
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         let ins: simd_float3x3 = frame.camera.intrinsics
         let res = frame.camera.imageResolution
         
-        intrinsics = Intrinsics(
+        self.getIntrinsics(ins: ins, res: res)
+        self.receiveIntrinsicsToCpp(ins: ins, res: res)
+        
+    }
+    
+    private func getIntrinsics(ins: simd_float3x3, res: CGSize) {
+        self.intrinsics = Intrinsics(
             fx: ins.columns.0.x, fy: ins.columns.1.y,
             cx: ins.columns.2.x, cy: ins.columns.2.y,
             width: Int32(res.width), height: Int32(res.height)
         )
         
     }
+    
+    private func receiveIntrinsicsToCpp(ins: simd_float3x3, res: CGSize) {
+        receive_intrinsics(Intrinsics_C(
+            fx: ins.columns.0.x,
+            fy: ins.columns.1.y,
+            cx: ins.columns.2.x,
+            cy: ins.columns.2.y,
+            width: Int32(res.width),
+            height: Int32(res.height)
+        ))
+        
+    }
+
 }

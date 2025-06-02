@@ -8,5 +8,6 @@
 #ifndef PoseTrackAR_Bridging_Header_h
 #define PoseTrackAR_Bridging_Header_h
 
+#import "CameraBridge.h"
 
 #endif /* PoseTrackAR_Bridging_Header_h */
