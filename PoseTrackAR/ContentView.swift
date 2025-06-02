@@ -12,7 +12,15 @@ struct ContentView: View {
     
     var body: some View {
         ZStack {
-            
+            if let image = ins.processedImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Text("처리된 이미지 없음")
+                    .foregroundColor(.gray)
+            }
         }
     }
 }
