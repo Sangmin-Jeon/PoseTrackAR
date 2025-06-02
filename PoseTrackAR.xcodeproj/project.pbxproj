@@ -272,6 +272,10 @@
 				DEVELOPMENT_ASSET_PATHS = "\"PoseTrackAR/Preview Content\"";
 				DEVELOPMENT_TEAM = JH3P7U29VC;
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/PoseTrackAR",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PoseTrackAR/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -304,6 +308,10 @@
 				DEVELOPMENT_ASSET_PATHS = "\"PoseTrackAR/Preview Content\"";
 				DEVELOPMENT_TEAM = JH3P7U29VC;
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/PoseTrackAR",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PoseTrackAR/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
