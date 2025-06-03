@@ -37,5 +37,24 @@ struct ContentView: View {
                     .background(Color.black.opacity(0.05))
             }
         }
+        .onAppear {
+            Task {
+                do {
+                    let yolo = try YOLO("yolo11n", task: .detect)
+                    guard let url = URL(string: "https://ultralytics.com/images/bus.jpg") else { return }
+                    
+                    let (data, _) = try await URLSession.shared.data(from: url)
+                    if let image = UIImage(data: data) {
+                        let result = yolo(image)
+                        print("Result: \(result)")
+                    } else {
+                        print("이미지 변환 실패")
+                    }
+                } catch {
+                    print("모델 로딩 또는 추론 실패: \(error)")
+                }
+            }
+        }
+        
     }
 }
