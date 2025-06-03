@@ -17,9 +17,23 @@ struct ContentView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                Text("처리된 이미지 없음")
-                    .foregroundColor(.gray)
+            }
+            else {
+                VStack(spacing: 16) {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .blue))
+                            .scaleEffect(2.0)
+
+                        Text("Processing camera feed...")
+                            .font(.headline)
+                            .foregroundColor(.gray)
+
+                        Text("Please wait while we prepare the frame.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.black.opacity(0.05))
             }
         }
     }
