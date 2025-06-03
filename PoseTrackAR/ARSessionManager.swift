@@ -104,7 +104,6 @@ extension ARSessionManager: ARSessionDelegate {
         let ins: simd_float3x3 = frame.camera.intrinsics
         let res = frame.camera.imageResolution
         
-        self.intrinsics = self.getIntrinsics(ins: ins, res: res)
         self.receiveIntrinsicsToCpp(ins: ins, res: res)
         
         let pixelBuf = self.getCameraFrame(frame: frame)
