@@ -10,6 +10,7 @@ import Combine
 
 import CoreImage
 import UIKit
+import YOLO
 
 struct Intrinsics {
     let fx: Float
@@ -87,6 +88,8 @@ class ARSessionManager: NSObject, ObservableObject {
                 .first ?? ARWorldTrackingConfiguration.supportedVideoFormats[0]
         session.run(cfg)
         
+        let yolo = YOLO("yolo11n", task: .detect)
+        print("success load yolo model: \(yolo)")
         
         cancellable = processedImageSubject
             .receive(on: DispatchQueue.main)

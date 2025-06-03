@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		5C6AEE632DEF50F400277DA6 /* YOLO in Frameworks */ = {isa = PBXBuildFile; productRef = 5C6AEE622DEF50F400277DA6 /* YOLO */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		5C2C9AC92DEDF01600FEA3C8 /* PoseTrackAR.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PoseTrackAR.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -47,6 +51,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5C6AEE632DEF50F400277DA6 /* YOLO in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -81,6 +86,7 @@
 			);
 			name = PoseTrackAR;
 			packageProductDependencies = (
+				5C6AEE622DEF50F400277DA6 /* YOLO */,
 			);
 			productName = PoseTrackAR;
 			productReference = 5C2C9AC92DEDF01600FEA3C8 /* PoseTrackAR.app */;
@@ -110,6 +116,9 @@
 			);
 			mainGroup = 5CC44E542DEAFC5F000E159B;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				5C6AEE612DEF50F400277DA6 /* XCRemoteSwiftPackageReference "yolo-ios-app" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 5CC44E542DEAFC5F000E159B;
 			projectDirPath = "";
@@ -356,6 +365,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		5C6AEE612DEF50F400277DA6 /* XCRemoteSwiftPackageReference "yolo-ios-app" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ultralytics/yolo-ios-app.git";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		5C6AEE622DEF50F400277DA6 /* YOLO */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5C6AEE612DEF50F400277DA6 /* XCRemoteSwiftPackageReference "yolo-ios-app" */;
+			productName = YOLO;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 5CC44E552DEAFC5F000E159B /* Project object */;
 }
