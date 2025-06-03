@@ -114,37 +114,32 @@ extension ARSessionManager: ARSessionDelegate {
 }
 
 extension ARSessionManager {
-    private func getIntrinsics(ins: simd_float3x3, res: CGSize) -> Intrinsics {
-        return Intrinsics(
+    private func receiveIntrinsicsToCpp(ins: simd_float3x3, res: CGSize) {
+        let _intrinsics = Intrinsics_C(
             fx: ins.columns.0.x, fy: ins.columns.1.y,
             cx: ins.columns.2.x, cy: ins.columns.2.y,
             width: Int32(res.width), height: Int32(res.height)
         )
-    }
-    
-    private func receiveIntrinsicsToCpp(ins: simd_float3x3, res: CGSize) {
-        receive_intrinsics(
-            Intrinsics_C(
-                fx: ins.columns.0.x, fy: ins.columns.1.y,
-                cx: ins.columns.2.x, cy: ins.columns.2.y,
-                width: Int32(res.width), height: Int32(res.height)
-            )
-        )
-        
+        receive_intrinsics(_intrinsics)
     }
     
     private func getCameraFrame(frame: ARFrame) -> CVPixelBuffer { frame.capturedImage }
     
     private func receivePixelBufToCpp(_ pixelBuffer: CVPixelBuffer) {
         CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
-        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
+        defer {
+            CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
+        }
         
-        if let (dataPtr, width, height) = pixelBufferToBGRAData(pixelBuffer), let dataPtr = dataPtr {
-            receive_camera_frame(
-                UnsafeMutableRawPointer(mutating: dataPtr),
-                Int32(width), Int32(height), Int32(width * 4)
-            )
-            dataPtr.deallocate()
+        DispatchQueue.global(qos: .userInitiated).async {
+            if let (dataPtr, width, height) = self.pixelBufferToBGRAData(pixelBuffer),
+               let dataPtr = dataPtr {
+                receive_camera_frame(
+                    UnsafeMutableRawPointer(mutating: dataPtr),
+                    Int32(width), Int32(height), Int32(width * 4)
+                )
+                dataPtr.deallocate()
+            }
         }
     }
     

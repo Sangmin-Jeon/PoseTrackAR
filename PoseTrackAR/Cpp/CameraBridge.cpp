@@ -19,24 +19,20 @@ void receive_intrinsics(struct Intrinsics_C intr) {
 }
 
 void receive_camera_frame(void* baseAddress, int width, int height, int bytesPerRow) {
-    // BGRA 포맷 입력
+    /// 입력: BGRA 포맷
     cv::Mat matBGRA(height, width, CV_8UC4, baseAddress, bytesPerRow);
 
     // BGRA → GRAY
     cv::Mat matGray;
     cv::cvtColor(matBGRA, matGray, cv::COLOR_BGRA2GRAY);
 
-    // GRAY → RGB (BGR이 아닌 RGB로 변환)
-    cv::Mat matGrayRGB;
-    cv::cvtColor(matGray, matGrayRGB, cv::COLOR_GRAY2RGB);
-    
-    // RGB → RGBA (알파 채널 추가)
-    cv::Mat matRGBA;
-    cv::cvtColor(matGrayRGB, matRGBA, cv::COLOR_RGB2RGBA);
+    // GRAY → BGRA (R=G=B=gray, A=255)
+    cv::Mat matGrayBGRA;
+    cv::cvtColor(matGray, matGrayBGRA, cv::COLOR_GRAY2BGRA);
 
     // 회전
     cv::Mat matRotated;
-    cv::rotate(matRGBA, matRotated, cv::ROTATE_90_CLOCKWISE);
+    cv::rotate(matGrayBGRA, matRotated, cv::ROTATE_90_CLOCKWISE);
 
     // Swift로 전달
     send_processed_frame_to_swift(
@@ -45,4 +41,5 @@ void receive_camera_frame(void* baseAddress, int width, int height, int bytesPer
         matRotated.rows,
         static_cast<int>(matRotated.step)
     );
+    
 }
