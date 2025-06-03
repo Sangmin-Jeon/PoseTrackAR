@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import YOLO
 
 struct ContentView: View {
     @StateObject private var ins = ARSessionManager()
