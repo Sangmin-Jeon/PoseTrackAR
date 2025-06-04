@@ -59,13 +59,18 @@ class ObjectDetector {
         let resized = image.resized(to: yolo_input_size)
         let result = detector(resized)
         
-        // YOLO.Box에서 DetectionResult로 변환
         let detections = result.boxes.map {
             DetectionObject(
                 label: $0.cls,
                 confidence: $0.conf,
                 boundingBox: $0.xywhn
             )
+        }
+        
+        if !detections.isEmpty {
+            // TODO: target 객체 하나만
+            receive_object_detection_info(self.convertToCStruct(from: detections[0]))
+
         }
 
         // 원본 이미지 크기에 맞게 시각화
@@ -75,6 +80,23 @@ class ObjectDetector {
         
     }
     
+    func convertToCStruct(from object: DetectionObject) -> DetectionObject_C {
+        var cObject = DetectionObject_C()
+        
+        // 문자열 변환
+        let labelCString = (object.label as NSString).utf8String
+        strncpy(&cObject.label.0, labelCString, 31)
+        
+        // 바운딩 박스 변환
+        cObject.bbox_x = Float(object.boundingBox.origin.x)
+        cObject.bbox_y = Float(object.boundingBox.origin.y)
+        cObject.bbox_width = Float(object.boundingBox.size.width)
+        cObject.bbox_height = Float(object.boundingBox.size.height)
+
+        cObject.confidence = object.confidence
+        
+        return cObject
+    }
     
 }
 

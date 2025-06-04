@@ -24,40 +24,13 @@ struct Intrinsics {
 
 let processedImageSubject = PassthroughSubject<UIImage, Never>()
 
-@_cdecl("send_processed_frame_to_swift")
-public func send_processed_frame_to_swift(
-    _ baseAddress: UnsafeRawPointer?,
-    _ width: Int32,
-    _ height: Int32,
-    _ bytesPerRow: Int32
+@_cdecl("send_calculate_coordinate_to_swift")
+public func send_calculate_coordinate_to_swift(
+    _ x: Float,
+    _ y: Float,
+    _ z: Float
 ) {
-    guard let baseAddress = baseAddress else { return }
-
-    let bufferSize = Int(bytesPerRow) * Int(height)
-    let data = Data(bytes: baseAddress, count: bufferSize)
-
-    print("[Swift] Received processed image of size: \(width)x\(height), total bytes: \(bufferSize)")
-
-    guard let provider = CGDataProvider(data: data as CFData),
-          let cgImage = CGImage(
-              width: Int(width),
-              height: Int(height),
-              bitsPerComponent: 8,
-              bitsPerPixel: 32,
-              bytesPerRow: Int(bytesPerRow),
-              space: CGColorSpaceCreateDeviceRGB(),
-              bitmapInfo: CGBitmapInfo(
-                  rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
-              ),
-              provider: provider,
-              decode: nil,
-              shouldInterpolate: false,
-              intent: .defaultIntent
-          )
-    else { return }
-    
-    let uiImage = UIImage(cgImage: cgImage)
-    // processedImageSubject.send(uiImage)
+    print("[swift] obj coordinate: \(x), \(y), \(z)")
     
     
 }
@@ -109,6 +82,7 @@ extension ARSessionManager: ARSessionDelegate {
         let pixelBuf = frame.capturedImage
         
         self.receiveIntrinsicsToCpp(ins: ins, res: res)
+        self.receivePixelBufToCpp(pixelBuf)
         
         DispatchQueue.global(qos: .userInitiated).async {
             // image 변환 등 시간 걸리는 작업은 여기서 처리

@@ -6,11 +6,9 @@
 //
 
 import SwiftUI
-import YOLO
 
 let screenWidth = UIScreen.main.bounds.width
 let screenHeight = UIScreen.main.bounds.height
-
 
 struct ContentView: View {
     @StateObject private var ins = ARSessionManager()
@@ -26,20 +24,20 @@ struct ContentView: View {
             }
             else {
                 VStack(spacing: 16) {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .blue))
-                            .scaleEffect(2.0)
-
-                        Text("Processing camera feed...")
-                            .font(.headline)
-                            .foregroundColor(.gray)
-
-                        Text("Please wait while we prepare the frame.")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.black.opacity(0.05))
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .blue))
+                        .scaleEffect(2.0)
+                    
+                    Text("Processing camera feed...")
+                        .font(.headline)
+                        .foregroundColor(.gray)
+                    
+                    Text("Please wait while we prepare the frame.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.black.opacity(0.05))
             }
         }
         
