@@ -108,7 +108,11 @@ extension ARSessionManager: ARSessionDelegate {
         self.receiveIntrinsicsToCpp(ins: ins, res: res)
         
         let pixelBuf = self.getCameraFrame(frame: frame)
-        let convertTopixelBuf = self.convertPixelBufferToUIImage(pixelBuf)
+        if let image = self.convertPixelBufferToUIImage(pixelBuf) {
+            // YOLO 추론
+            detector.detect(image: image)
+        }
+        
         self.receivePixelBufToCpp(pixelBuf)
         
     }

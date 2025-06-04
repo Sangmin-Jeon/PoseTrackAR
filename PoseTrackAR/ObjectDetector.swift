@@ -11,42 +11,48 @@ import CoreML
 import YOLO
 
 
-class ObjectDetector {
+// YOLO 모델 사이즈
+fileprivate let modelName = String("yolo11n")
+// YOLO 입력 사이즈
+fileprivate let yolo_input_size: CGSize = CGSize(width: 640, height: 384)
 
-    init(modelName: String = "yolo11n") {
+
+class ObjectDetector {
+    private var detector: YOLO?
+    
+    init() {
         let _ = YOLO(modelName, task: .detect) { [weak self] result in
             guard let self = self else { return }
             switch result {
             case .success(let yolo):
-                self.detect(with: yolo)
+                self.detector = yolo
                 print("모델 로딩 성공")
-                
             case .failure(let error):
                 print("모델 로딩 실패: \(error)")
             }
         }
     }
-
-    private func detect(with detector: YOLO) {
-        guard let url = URL(string: "https://ultralytics.com/images/bus.jpg") else {
-            print("URL이 유효하지 않습니다.")
+    
+    func detect(image: UIImage) {
+        guard let detector = self.detector else {
+            print("모델이 아직 로드되지 않았습니다.")
             return
         }
+        
+        let resized = image.resized(to: yolo_input_size)
+        let result = detector(resized)
+        print("YOLO 추론 결과: \(result)")
+    }
+    
+    
+}
 
-        URLSession.shared.dataTask(with: url) { data, _, error in
-            if let error = error {
-                print("네트워크 오류: \(error.localizedDescription)")
-                return
-            }
 
-            guard let data = data, let image = UIImage(data: data) else {
-                print("이미지 변환 실패")
-                return
-            }
-
-            let result = detector(image)
-            print("Result: \(result)")
-            
-        }.resume()
+extension UIImage {
+    func resized(to targetSize: CGSize) -> UIImage {
+        let renderer = UIGraphicsImageRenderer(size: targetSize)
+        return renderer.image { _ in
+            self.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
     }
 }
