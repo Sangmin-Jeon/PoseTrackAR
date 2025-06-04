@@ -8,6 +8,10 @@
 import SwiftUI
 import YOLO
 
+let screenWidth = UIScreen.main.bounds.width
+let screenHeight = UIScreen.main.bounds.height
+
+
 struct ContentView: View {
     @StateObject private var ins = ARSessionManager()
     
@@ -16,8 +20,9 @@ struct ContentView: View {
             if let image = ins.processedImage {
                 Image(uiImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .rotationEffect(.degrees(90))
+                    .aspectRatio(contentMode: .fill)
+                    .frame(maxWidth: screenWidth, maxHeight: screenHeight)
             }
             else {
                 VStack(spacing: 16) {

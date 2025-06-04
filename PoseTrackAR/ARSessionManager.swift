@@ -57,7 +57,7 @@ public func send_processed_frame_to_swift(
     else { return }
     
     let uiImage = UIImage(cgImage: cgImage)
-    processedImageSubject.send(uiImage)
+    // processedImageSubject.send(uiImage)
     
     
 }
@@ -93,7 +93,9 @@ class ARSessionManager: NSObject, ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] image in
                 guard let self = self else { return }
-                self.processedImage = image
+                DispatchQueue.main.async {
+                    self.processedImage = image
+                }
             }
     }
 
@@ -104,17 +106,16 @@ extension ARSessionManager: ARSessionDelegate {
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         let ins: simd_float3x3 = frame.camera.intrinsics
         let res = frame.camera.imageResolution
+        let pixelBuf = frame.capturedImage
         
         self.receiveIntrinsicsToCpp(ins: ins, res: res)
         
-        let pixelBuf = self.getCameraFrame(frame: frame)
-        if let image = self.convertPixelBufferToUIImage(pixelBuf) {
-            // YOLO 추론
-            detector.detect(image: image)
+        DispatchQueue.global(qos: .userInitiated).async {
+            // image 변환 등 시간 걸리는 작업은 여기서 처리
+            guard let image = self.convertPixelBufferToUIImage(pixelBuf) else { return }
+            
+            self.detector.detect(image: image)
         }
-        
-        self.receivePixelBufToCpp(pixelBuf)
-        
     }
     
 }
@@ -129,7 +130,6 @@ extension ARSessionManager {
         receive_intrinsics(_intrinsics)
     }
     
-    private func getCameraFrame(frame: ARFrame) -> CVPixelBuffer { frame.capturedImage }
     
     func convertPixelBufferToUIImage(_ pixelBuffer: CVPixelBuffer) -> UIImage? {
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
@@ -142,6 +142,7 @@ extension ARSessionManager {
 
         return UIImage(cgImage: cgImage)
     }
+    
     
     private func receivePixelBufToCpp(_ pixelBuffer: CVPixelBuffer) {
         CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
@@ -160,6 +161,7 @@ extension ARSessionManager {
             }
         }
     }
+    
     
     private func pixelBufferToBGRAData(_ pixelBuffer: CVPixelBuffer) -> (UnsafeRawPointer?, Int, Int)? {
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
