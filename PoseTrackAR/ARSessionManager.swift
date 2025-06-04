@@ -64,6 +64,7 @@ public func send_processed_frame_to_swift(
 
 class ARSessionManager: NSObject, ObservableObject {
     private let session = ARSession()
+    private let detector = ObjectDetector()
 
     /*
      intrinsics.columns.0 = [f_x, 0,     0]   // X축 방향 열
@@ -88,9 +89,6 @@ class ARSessionManager: NSObject, ObservableObject {
                 .first ?? ARWorldTrackingConfiguration.supportedVideoFormats[0]
         session.run(cfg)
         
-        let yolo = YOLO("yolo11n", task: .detect)
-        print("success load yolo model: \(yolo)")
-        
         cancellable = processedImageSubject
             .receive(on: DispatchQueue.main)
             .sink { [weak self] image in
@@ -110,6 +108,7 @@ extension ARSessionManager: ARSessionDelegate {
         self.receiveIntrinsicsToCpp(ins: ins, res: res)
         
         let pixelBuf = self.getCameraFrame(frame: frame)
+        let convertTopixelBuf = self.convertPixelBufferToUIImage(pixelBuf)
         self.receivePixelBufToCpp(pixelBuf)
         
     }
@@ -127,6 +126,18 @@ extension ARSessionManager {
     }
     
     private func getCameraFrame(frame: ARFrame) -> CVPixelBuffer { frame.capturedImage }
+    
+    func convertPixelBufferToUIImage(_ pixelBuffer: CVPixelBuffer) -> UIImage? {
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        let context = CIContext()
+        
+        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
+            print("CGImage 변환 실패")
+            return nil
+        }
+
+        return UIImage(cgImage: cgImage)
+    }
     
     private func receivePixelBufToCpp(_ pixelBuffer: CVPixelBuffer) {
         CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
