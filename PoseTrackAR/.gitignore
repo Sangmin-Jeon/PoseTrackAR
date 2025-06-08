@@ -1,6 +1,8 @@
 # Created by https://www.toptal.com/developers/gitignore/api/xcode,swift,swiftpackagemanager,c++
 # Edit at https://www.toptal.com/developers/gitignore?templates=xcode,swift,swiftpackagemanager,c++
 
+dataset
+make_dataset.py
 
 *.framework/
 

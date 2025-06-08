@@ -29,7 +29,7 @@ struct DetectionObject: Identifiable {
 }
 
 // YOLO 모델 사이즈
-fileprivate let modelName = String("yolo11n")
+fileprivate let modelName = String("best")
 // YOLO 입력 사이즈
 fileprivate let yolo_input_size: CGSize = CGSize(width: 640, height: 384)
 
