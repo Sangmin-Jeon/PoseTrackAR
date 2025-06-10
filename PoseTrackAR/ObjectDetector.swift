@@ -75,7 +75,8 @@ class ObjectDetector {
 
         // 원본 이미지 크기에 맞게 시각화
         let imageWithBoxes = image.drawDetections(detections)
-        processedImageSubject.send(imageWithBoxes)
+        // TODO: YOLO 객체 추적 이미지
+        // processedImageSubject.send(imageWithBoxes)
         
         
     }

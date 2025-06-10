@@ -1,5 +1,5 @@
 //
-//  Untitled.swift
+//  CameraBridge.h
 //  PoseTrackAR
 //
 //  Created by 전상민 on 6/3/25.
@@ -33,7 +33,6 @@ struct DetectionObject_C {
     float bbox_height;    // 바운딩 박스 높이
 };
 
-
 // 내부 파라미터 전달 함수
 void receive_intrinsics(struct Intrinsics_C intr);
 
@@ -43,8 +42,10 @@ void receive_camera_frame(void* baseAddress, int width, int height, int bytesPer
 // 객체 정보
 void receive_object_detection_info(struct DetectionObject_C obj);
 
-// 계산한 객체 좌표
+// 계산한 객체 좌표 (Swift로 전달)
 void send_calculate_coordinate_to_swift(float x, float y, float z);
+
+void send_processed_frame_to_swift(void* baseAddress, int width, int height, int bytesPerRow);
 
 #ifdef __cplusplus
 }

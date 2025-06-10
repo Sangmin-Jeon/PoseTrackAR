@@ -14,6 +14,10 @@
 struct ObjState {
     Intrinsics_C intrinsics;
     bool has_intrinsics = false;
+    
+    cv::Mat current_frame;    // 원본 BGRA
+    cv::Mat gray_frame;       // PnP용 그레이스케일
+    bool has_frame = false;
 
     std::vector<cv::Point2f> imagePoints;
     std::vector<cv::Point3f> objectPoints;
@@ -35,10 +39,28 @@ void receive_intrinsics(struct Intrinsics_C intr) {
 
 // 카메라 이미지
 void receive_camera_frame(void* baseAddress, int width, int height, int bytesPerRow) {
-    // 입력: BGRA 포맷
     cv::Mat matBGRA(height, width, CV_8UC4, baseAddress, bytesPerRow);
     
-    std::cout << "[C++] 이미지 사이즈" << matBGRA.size << std::endl;
+    obj_state.current_frame = matBGRA.clone();
+    obj_state.has_frame = true;
+    cv::cvtColor(obj_state.current_frame, obj_state.gray_frame, cv::COLOR_BGRA2GRAY);
+
+    // 특징점 검출
+    std::vector<cv::Point2f> corners;
+    cv::goodFeaturesToTrack(obj_state.gray_frame, corners, 100, 0.01, 10.0);
+
+    // 코너 표시 (BGRA 순서: B, G, R, A)
+    for (const auto& pt : corners) {
+        cv::circle(obj_state.current_frame, pt, 5, cv::Scalar(0, 255, 0, 255), 2);
+    }
+    
+    // BGRA → RGBA 변환 그대로 BGRA로 전달
+    send_processed_frame_to_swift(
+        obj_state.current_frame.data,
+        obj_state.current_frame.cols,
+        obj_state.current_frame.rows,
+        static_cast<int>(obj_state.current_frame.step)
+    );
     
 }
 

@@ -24,16 +24,6 @@ struct Intrinsics {
 
 let processedImageSubject = PassthroughSubject<UIImage, Never>()
 
-@_cdecl("send_calculate_coordinate_to_swift")
-public func send_calculate_coordinate_to_swift(
-    _ x: Float,
-    _ y: Float,
-    _ z: Float
-) {
-    print("[swift] obj coordinate: \(x), \(y), \(z)")
-    
-    
-}
 
 class ARSessionManager: NSObject, ObservableObject {
     private let session = ARSession()
@@ -157,7 +147,8 @@ extension ARSessionManager {
         guard let contextRef = CGContext(
             data: rawData, width: width, height: height,
             bitsPerComponent: 8, bytesPerRow: bytesPerRow, space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+            // 핵심 변경: premultipliedLast → premultipliedFirst (RGBA → BGRA)
         )
         else {
             rawData.deallocate()
@@ -166,7 +157,6 @@ extension ARSessionManager {
         
         contextRef.draw(cgImage, in: rect)
         return (UnsafeRawPointer(rawData), width, height)
-        
     }
     
 }
