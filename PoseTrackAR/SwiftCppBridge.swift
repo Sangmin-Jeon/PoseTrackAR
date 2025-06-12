@@ -43,7 +43,11 @@ public func send_processed_frame_to_swift(
         return
     }
     
-    let uiImage = UIImage(cgImage: cgImage)
+    let uiImage = UIImage(
+        cgImage: cgImage,
+        scale: UIScreen.main.scale,
+        orientation: .right
+    )
     processedImageSubject.send(uiImage)
 }
 
@@ -54,7 +58,8 @@ public func send_calculate_coordinate_to_swift(
     _ y: Float,
     _ z: Float
 ) {
-    print("[swift] obj coordinate: \(x), \(y), \(z)")
-    
-    
+    let distance = sqrt(x * x + y * y + z * z)
+    print(String(format: "[swift] obj coordinate (cm): x=%.1f, y=%.1f, z=%.1f → distance=%.1f cm",
+                 x, y, z, distance))
+     
 }

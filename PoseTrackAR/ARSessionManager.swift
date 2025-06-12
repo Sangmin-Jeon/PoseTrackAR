@@ -22,12 +22,18 @@ struct Intrinsics {
     let height: Int32
 }
 
+struct KeyPoints {
+    let x: Float
+    let y: Float
+}
+
+
 let processedImageSubject = PassthroughSubject<UIImage, Never>()
 
 
 class ARSessionManager: NSObject, ObservableObject {
     private let session = ARSession()
-    private let detector = ObjectDetector()
+    // private let detector = ObjectDetector()
 
     /*
      intrinsics.columns.0 = [f_x, 0,     0]   // X축 방향 열
@@ -38,6 +44,7 @@ class ARSessionManager: NSObject, ObservableObject {
     @Published var res: CGSize = .zero
     
     @Published var processedImage: UIImage?
+    @Published var keyPoints: [CGPoint] = []
 
     private var cancellable: AnyCancellable?
 
@@ -78,7 +85,8 @@ extension ARSessionManager: ARSessionDelegate {
             // image 변환 등 시간 걸리는 작업은 여기서 처리
             guard let image = self.convertPixelBufferToUIImage(pixelBuf) else { return }
             
-            self.detector.detect(image: image)
+            // TODO: 실시간 처리할때 사용
+            // self.detector.detect(image: image)
         }
     }
     
@@ -110,19 +118,34 @@ extension ARSessionManager {
     
     private func receivePixelBufToCpp(_ pixelBuffer: CVPixelBuffer) {
         CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
-        defer {
-            CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
-        }
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
+
+        // Swift의 [CGPoint]를 C 호환 KeyPoints 배열로 변환
+        let kpArr = keyPoints.map { KeyPoints(x: Float($0.x), y: Float($0.y)) }
         
         DispatchQueue.global(qos: .userInitiated).async {
-            if let (dataPtr, width, height) = self.pixelBufferToBGRAData(pixelBuffer),
-               let dataPtr = dataPtr {
-                receive_camera_frame(
-                    UnsafeMutableRawPointer(mutating: dataPtr),
-                    Int32(width), Int32(height), Int32(width * 4)
-                )
-                dataPtr.deallocate()
+            guard let (dataPtr, width, height) = self.pixelBufferToBGRAData(pixelBuffer),
+                  let dataPtr = dataPtr else { return }
+
+            // 항상 호출하되, 터치가 없으면 buf.count == 0, buf.baseAddress == nil
+            kpArr.withUnsafeBufferPointer { buf in
+                buf.baseAddress?.withMemoryRebound(
+                    to: KeyPoints_C.self,
+                    capacity: buf.count
+                ) { cPtr in
+                    receive_camera_frame(
+                        UnsafeMutableRawPointer(mutating: dataPtr),
+                        Int32(width),
+                        Int32(height),
+                        Int32(width * 4),
+                        cPtr,
+                        Int32(buf.count)
+                    )
+                }
+                // 터치 포인트가 없으면 buf.baseAddress는 nil → C엔 NULL, pointCount=0 으로 넘어감
             }
+
+            dataPtr.deallocate()
         }
     }
     

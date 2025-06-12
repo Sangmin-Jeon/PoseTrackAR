@@ -68,7 +68,6 @@ class ObjectDetector {
         }
         
         if !detections.isEmpty {
-            // TODO: target 객체 하나만
             receive_object_detection_info(self.convertToCStruct(from: detections[0]))
 
         }

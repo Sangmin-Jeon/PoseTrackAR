@@ -33,11 +33,24 @@ struct DetectionObject_C {
     float bbox_height;    // 바운딩 박스 높이
 };
 
+typedef struct {
+    float x;
+    float y;
+} KeyPoints_C;
+
+
 // 내부 파라미터 전달 함수
 void receive_intrinsics(struct Intrinsics_C intr);
 
 // 카메라 이미지 프레임 전달 함수 (iOS BGRA 데이터)
-void receive_camera_frame(void* baseAddress, int width, int height, int bytesPerRow);
+void receive_camera_frame(
+    void*               baseAddress,
+    int                 width,
+    int                 height,
+    int                 bytesPerRow,
+    const KeyPoints_C*    points,     // 터치점 배열 (nil 가능)
+    int                 pointCount  // 배열 길이 (0 가능)
+);
 
 // 객체 정보
 void receive_object_detection_info(struct DetectionObject_C obj);
