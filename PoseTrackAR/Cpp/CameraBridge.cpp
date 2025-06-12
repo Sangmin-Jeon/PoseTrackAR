@@ -14,7 +14,6 @@
 // TouchPoint 을 그대로 저장할 수 있도록
 typedef KeyPoints_C TouchPoint_C;
 
-
 struct ObjState {
     Intrinsics_C intrinsics;
     bool has_intrinsics = false;
@@ -24,7 +23,7 @@ struct ObjState {
     cv::Rect last_bbox;
     bool has_frame = false;
 
-    std::vector<KeyPoints_C> touchPoints; // 터치로 받은 2D 포인트
+    std::vector<TouchPoint_C> touchPoints; // 터치로 받은 2D 포인트 (픽셀 좌표)
 
     std::vector<cv::Point2f> imagePoints;
     std::vector<cv::Point3f> objectPoints;
@@ -35,41 +34,21 @@ struct ObjState {
 static ObjState obj_state;
 
 // 3D 모델 포인트 초기화 (바닥점 기준, OpenCV 카메라 좌표계)
+// 단위: cm
 void setupObjectPoints() {
     obj_state.objectPoints.clear();
 
-    float bottomY =  3.5f, bottomZ =  2.35f;
-    float chestY  =  2.3f, chestZ  =  4.3f;
-    float eyeY    =  2.5f, eyeDist =  2.7f;
-    float brimY   =  2.5f, brimZ   =  6.5f, brimDist = 8.5f;
-    float hatY    =  0.5f, hatZ    = 12.4f;
-    float halfEye  = eyeDist * 0.5f;
-    float halfBrim = brimDist * 0.5f;
-
-    // 바닥(0,0,0) 기준 상대 좌표
-    float relY0 = 0.0f,                    relZ0 = 0.0f;
-    float relY1 = chestY - bottomY,        relZ1 = chestZ - bottomZ;
-    float relY2 = eyeY   - bottomY,        relZ2 = 8.8f - bottomZ;
-    float relY3 = eyeY   - bottomY,        relZ3 = 9.0f - bottomZ;
-    float relY4 = brimY  - bottomY,        relZ4 = brimZ - bottomZ;
-    float relY5 = brimY  - bottomY,        relZ5 = brimZ - bottomZ;
-    float relY6 = hatY   - bottomY,        relZ6 = hatZ - bottomZ;
-    float relY7 = hatY   - bottomY,        relZ7 = hatZ - bottomZ;
-
-    // OpenCV 카메라 좌표계로 변환: (X→X, Y→–Z, Z→Y)
-    auto toCV = [&](float x, float y, float z){
-        return cv::Point3f(x, -z, y);
-    };
-
+    // 예시: 객체의 3D 포인트 정의 (cm 단위)
+    // 실제 객체에 맞게 조정 필요
     obj_state.objectPoints = {
-        toCV(   0.0f, relY0, relZ0),
-        toCV(   0.0f, relY1, relZ1),
-        toCV(-halfEye, relY2, relZ2),
-        toCV( halfEye, relY3, relZ3),
-        toCV(-halfBrim, relY4, relZ4),
-        toCV( halfBrim, relY5, relZ5),
-        toCV(-1.7f,    relY6, relZ6),
-        toCV( 2.8f,    relY7, relZ7)
+        cv::Point3f(0.0f, 0.0f, 0.0f),    // 0: 바닥 중심
+        cv::Point3f(0.0f, 5.0f, 0.0f),    // 1: 가슴 부분
+        cv::Point3f(-2.5f, 10.0f, 0.0f),  // 2: 왼쪽 눈
+        cv::Point3f(2.5f, 10.0f, 0.0f),   // 3: 오른쪽 눈
+        cv::Point3f(-5.0f, 15.0f, 0.0f),  // 4: 모자 왼쪽
+        cv::Point3f(5.0f, 15.0f, 0.0f),   // 5: 모자 오른쪽
+        cv::Point3f(-1.0f, 20.0f, 0.0f),  // 6: 모자 상단 왼쪽
+        cv::Point3f(1.0f, 20.0f, 0.0f)    // 7: 모자 상단 오른쪽
     };
 
     obj_state.object_points_initialized = true;
@@ -107,31 +86,45 @@ void cal_pose_coord() {
     imgPts.reserve(N);
     objPts.reserve(N);
     for (size_t i = 0; i < N; ++i) {
-        imgPts.emplace_back(obj_state.touchPoints[i].x,
-                            obj_state.touchPoints[i].y);
+        // touchPoints는 이미 픽셀 좌표로 저장됨
+        float pixelX = obj_state.touchPoints[i].x;
+        float pixelY = obj_state.touchPoints[i].y;
+        imgPts.emplace_back(pixelX, pixelY);
         objPts.push_back(obj_state.objectPoints[i]);
     }
 
     // 카메라 매트릭스
-    cv::Mat K = (cv::Mat_<double>(3,3) <<
+    cv::Mat cameraMatrix = (cv::Mat_<double>(3,3) <<
         obj_state.intrinsics.fx, 0, obj_state.intrinsics.cx,
         0, obj_state.intrinsics.fy, obj_state.intrinsics.cy,
         0, 0, 1);
-    cv::Mat dist = cv::Mat::zeros(1,5,CV_64F);
+    cv::Mat distCoeffs = cv::Mat::zeros(1,5,CV_64F);
 
     cv::Mat rvec, tvec;
-    bool ok = cv::solvePnP(objPts, imgPts, K, dist, rvec, tvec, false, cv::SOLVEPNP_ITERATIVE);
+    bool ok = cv::solvePnP(objPts, imgPts, cameraMatrix, distCoeffs, rvec, tvec, false, cv::SOLVEPNP_ITERATIVE);
     if (!ok) {
         printf("[C++] solvePnP failed\n");
         send_calculate_coordinate_to_swift(0,0,0);
         return;
     }
 
-    float x_cm = tvec.at<double>(0)*100.0f;
-    float y_cm = tvec.at<double>(1)*100.0f;
-    float z_cm = tvec.at<double>(2)*100.0f;
+    // tvec은 cm 단위로 가정
+    float x_cm = tvec.at<double>(0);
+    float y_cm = tvec.at<double>(1);
+    float z_cm = tvec.at<double>(2);
     printf("[C++] PnP: x=%.1fcm y=%.1fcm z=%.1fcm\n", x_cm, y_cm, z_cm);
     send_calculate_coordinate_to_swift(x_cm, y_cm, z_cm);
+
+    // 디버깅: 투영 포인트와 터치 포인트 비교 (픽셀 단위)
+    std::vector<cv::Point2f> projectedPts;
+    cv::projectPoints(objPts, rvec, tvec, cameraMatrix, distCoeffs, projectedPts);
+    for (size_t i = 0; i < N; ++i) {
+        float dx = projectedPts[i].x - imgPts[i].x;
+        float dy = projectedPts[i].y - imgPts[i].y;
+        float error = std::sqrt(dx*dx + dy*dy);
+        printf("[C++] Point %zu: projected=(%.1f,%.1f), touch=(%.1f,%.1f), error=%.2f px\n",
+               i, projectedPts[i].x, projectedPts[i].y, imgPts[i].x, imgPts[i].y, error);
+    }
 }
 
 void receive_camera_frame(
@@ -141,23 +134,26 @@ void receive_camera_frame(
       const KeyPoints_C* points,
       int pointCount)
 {
-    // 1) 화면 버퍼 → Mat
+    // 화면 버퍼 → Mat
     cv::Mat frameBGRA(height, width, CV_8UC4, baseAddress, bytesPerRow);
     obj_state.current_frame = frameBGRA.clone();
     cv::cvtColor(obj_state.current_frame, obj_state.gray_frame, cv::COLOR_BGRA2GRAY);
 
-    // 2) 터치 포인트 갱신
+    // 터치 포인트 갱신 (정규화된 좌표 -> 픽셀 좌표)
     obj_state.touchPoints.clear();
     printf("[C++] receive_camera_frame — pointCount=%d\n", pointCount);
     for (int i = 0; i < pointCount; ++i) {
-        printf("  Touch[%d]=(% .2f, % .2f)\n", i, points[i].x, points[i].y);
-        obj_state.touchPoints.push_back(points[i]);
+        // 정규화된 좌표를 픽셀 좌표로 변환
+        float pixelX = points[i].x * obj_state.intrinsics.width;
+        float pixelY = points[i].y * obj_state.intrinsics.height;
+        printf("  Touch[%d]=(%.2f, %.2f) -> Pixel=(%.2f, %.2f)\n", i, points[i].x, points[i].y, pixelX, pixelY);
+        obj_state.touchPoints.push_back({pixelX, pixelY});
     }
 
-    // 3) PnP 계산
+    // PnP 계산
     cal_pose_coord();
 
-    // 4) Swift로 화면 전송
+    // Swift로 화면 전송
     send_processed_frame_to_swift(
         obj_state.current_frame.data,
         obj_state.current_frame.cols,

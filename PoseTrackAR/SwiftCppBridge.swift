@@ -9,6 +9,7 @@ import Combine
 import CoreImage
 import UIKit
 
+let processedImageSubject = PassthroughSubject<UIImage, Never>()
 
 @_cdecl("send_processed_frame_to_swift")
 public func send_processed_frame_to_swift(
@@ -52,6 +53,15 @@ public func send_processed_frame_to_swift(
 }
 
 
+public struct Pose {
+    public let x: Float
+    public let y: Float
+    public let z: Float
+    public let distance: Float
+}
+
+public let poseSubject = PassthroughSubject<Pose, Never>()
+
 @_cdecl("send_calculate_coordinate_to_swift")
 public func send_calculate_coordinate_to_swift(
     _ x: Float,
@@ -61,5 +71,6 @@ public func send_calculate_coordinate_to_swift(
     let distance = sqrt(x * x + y * y + z * z)
     print(String(format: "[swift] obj coordinate (cm): x=%.1f, y=%.1f, z=%.1f → distance=%.1f cm",
                  x, y, z, distance))
+    poseSubject.send(Pose(x: x, y: y, z: z, distance: distance))
      
 }

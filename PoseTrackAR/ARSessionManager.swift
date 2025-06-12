@@ -28,9 +28,6 @@ struct KeyPoints {
 }
 
 
-let processedImageSubject = PassthroughSubject<UIImage, Never>()
-
-
 class ARSessionManager: NSObject, ObservableObject {
     private let session = ARSession()
     // private let detector = ObjectDetector()
@@ -45,8 +42,10 @@ class ARSessionManager: NSObject, ObservableObject {
     
     @Published var processedImage: UIImage?
     @Published var keyPoints: [CGPoint] = []
+    @Published var pose: Pose?
 
-    private var cancellable: AnyCancellable?
+    private var pICancellable: AnyCancellable?
+    private var pSCancellable: AnyCancellable?
 
     override init() {
         super.init()
@@ -59,7 +58,7 @@ class ARSessionManager: NSObject, ObservableObject {
                 .first ?? ARWorldTrackingConfiguration.supportedVideoFormats[0]
         session.run(cfg)
         
-        cancellable = processedImageSubject
+        pICancellable = processedImageSubject
             .receive(on: DispatchQueue.main)
             .sink { [weak self] image in
                 guard let self = self else { return }
@@ -67,9 +66,16 @@ class ARSessionManager: NSObject, ObservableObject {
                     self.processedImage = image
                 }
             }
+        
+        pSCancellable = poseSubject
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _pose in
+                guard let self = self else { return }
+                self.pose = _pose
+                
+            }
     }
-
-
+    
 }
 
 extension ARSessionManager: ARSessionDelegate {
