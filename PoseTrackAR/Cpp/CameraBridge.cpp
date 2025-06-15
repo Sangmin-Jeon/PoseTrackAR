@@ -6,154 +6,352 @@
 //
 
 
-#include <stdio.h>
 #include "CameraBridge.h"
-
+#include <cstdio>
 #include <opencv2/opencv.hpp>
-
-// TouchPoint 을 그대로 저장할 수 있도록
-typedef KeyPoints_C TouchPoint_C;
+#include <opencv2/features2d.hpp>
+#include <vector>
+#include <algorithm>
 
 struct ObjState {
     Intrinsics_C intrinsics;
     bool has_intrinsics = false;
+
+    cv::Mat current_frame; // 원본 BGRA
+    cv::Mat gray_frame;    // 처리용 그레이스케일
     
-    cv::Mat current_frame;    // 원본 BGRA
-    cv::Mat gray_frame;       // PnP용 그레이스케일
-    cv::Rect last_bbox;
-    bool has_frame = false;
-
-    std::vector<TouchPoint_C> touchPoints; // 터치로 받은 2D 포인트 (픽셀 좌표)
-
-    std::vector<cv::Point2f> imagePoints;
-    std::vector<cv::Point3f> objectPoints;
+    // 참조 이미지 및 특징점 정보
+    cv::Mat reference_image;
+    cv::Mat reference_gray;
+    std::vector<cv::KeyPoint> reference_keypoints;
+    cv::Mat reference_descriptors;
+    bool reference_loaded = false;
+    
+    cv::Rect last_bbox; // 바운딩 박스 정보
     bool has_detection = false;
-    bool object_points_initialized = false;
+    
+    // 미리 정의된 참조 이미지의 픽셀 좌표와 3D 좌표 매칭
+    std::vector<cv::Point2f> reference_pixels;  // 참조 이미지에서의 픽셀 좌표
+    std::vector<cv::Point3f> object_3d_points;  // 대응하는 실측 3D 좌표
+    
+    // ORB 특징점 추출기
+    cv::Ptr<cv::ORB> orb_detector;
+    cv::Ptr<cv::BFMatcher> matcher;
+    
+    // PnP 결과
+    cv::Mat last_rvec, last_tvec;
+    bool has_valid_pose = false;
+    float last_reprojection_error = 0.0f;
+    
+    const float MAX_REPROJECTION_ERROR = 10.0f;
+    const int MIN_MATCH_COUNT = 10;
 };
 
 static ObjState obj_state;
 
-// 3D 모델 포인트 초기화 (바닥점 기준, OpenCV 카메라 좌표계)
-// 단위: cm
-void setupObjectPoints() {
-    obj_state.objectPoints.clear();
-
-    // 예시: 객체의 3D 포인트 정의 (cm 단위)
-    // 실제 객체에 맞게 조정 필요
-    obj_state.objectPoints = {
-        cv::Point3f(0.0f, 0.0f, 0.0f),    // 0: 바닥 중심
-        cv::Point3f(0.0f, 5.0f, 0.0f),    // 1: 가슴 부분
-        cv::Point3f(-2.5f, 10.0f, 0.0f),  // 2: 왼쪽 눈
-        cv::Point3f(2.5f, 10.0f, 0.0f),   // 3: 오른쪽 눈
-        cv::Point3f(-5.0f, 15.0f, 0.0f),  // 4: 모자 왼쪽
-        cv::Point3f(5.0f, 15.0f, 0.0f),   // 5: 모자 오른쪽
-        cv::Point3f(-1.0f, 20.0f, 0.0f),  // 6: 모자 상단 왼쪽
-        cv::Point3f(1.0f, 20.0f, 0.0f)    // 7: 모자 상단 오른쪽
+void setupReferenceData() {
+    // 참조 데이터 초기화 - 당신이 제공한 실제 데이터 사용
+    obj_state.reference_pixels.clear();
+    obj_state.object_3d_points.clear();
+    
+    // 참조 이미지에서의 픽셀 좌표 (touch 좌표 사용)
+    obj_state.reference_pixels = {
+        {978.1f, 1032.6f},  // 0: 바닥 중심
+        {964.9f, 889.8f},   // 1: 가슴 부분
+        {623.6f, 673.2f},   // 2: 왼쪽 눈
+        {1357.1f, 694.2f},  // 3: 오른쪽 눈
+        {833.6f, 537.8f},   // 4: 모자 왼쪽
+        {1086.4f, 518.2f},  // 5: 모자 오른쪽
+        {674.5f, 473.8f},   // 6: 모자 상단 왼쪽
+        {1293.1f, 418.5f}   // 7: 모자 상단 오른쪽
     };
+    
+    // 대응하는 실측 3D 좌표
+    obj_state.object_3d_points = {
+        {0.0f, 2.5f, 0.0f},   // 0: 바닥 중심
+        {0.0f, 4.5f, 0.0f},   // 1: 가슴 부분
+        {-4.0f, 6.6f, 0.0f},  // 2: 왼쪽 눈
+        {4.0f, 6.3f, 0.0f},   // 3: 오른쪽 눈
+        {-1.5f, 8.5f, 0.0f},  // 4: 모자 왼쪽
+        {1.5f, 8.5f, 0.0f},   // 5: 모자 오른쪽
+        {-3.5f, 9.0f, 0.0f},  // 6: 모자 상단 왼쪽
+        {4.0f, 8.5f, 0.0f}    // 7: 모자 상단 오른쪽
+    };
+    
+    std::printf("[C++] Reference data initialized: %zu point pairs\n",
+                obj_state.reference_pixels.size());
+}
 
-    obj_state.object_points_initialized = true;
-    printf("[C++] ObjectPoints initialized: %zu pts\n", obj_state.objectPoints.size());
+void setupFeatureDetector() {
+    // ORB 특징점 검출기 초기화
+    obj_state.orb_detector = cv::ORB::create(
+        1000,    // 최대 특징점 수
+        1.2f,    // 스케일 팩터
+        8,       // 피라미드 레벨
+        31,      // 엣지 임계값
+        0,       // 첫 번째 레벨
+        2,       // WTA_K
+        cv::ORB::HARRIS_SCORE, // 스코어 타입
+        31,      // 패치 크기
+        20       // 빠른 임계값
+    );
+    
+    // 매처 초기화 (Brute Force)
+    obj_state.matcher = cv::BFMatcher::create(cv::NORM_HAMMING, true);
+    
+    std::printf("[C++] Feature detector initialized\n");
+}
+
+bool loadReferenceImage(const std::string& imagePath) {
+    obj_state.reference_image = cv::imread(imagePath, cv::IMREAD_COLOR);
+    if (obj_state.reference_image.empty()) {
+        std::printf("[C++] Failed to load reference image: %s\n", imagePath.c_str());
+        return false;
+    }
+    
+    cv::cvtColor(obj_state.reference_image, obj_state.reference_gray, cv::COLOR_BGR2GRAY);
+    
+    // ORB 검출기가 초기화되지 않았다면 초기화
+    if (!obj_state.orb_detector) {
+        setupFeatureDetector();
+    }
+    
+    // 참조 이미지에서 특징점 추출
+    obj_state.orb_detector->detectAndCompute(
+        obj_state.reference_gray,
+        cv::noArray(),
+        obj_state.reference_keypoints,
+        obj_state.reference_descriptors
+    );
+    
+    obj_state.reference_loaded = true;
+    
+    std::printf("[C++] Reference image loaded: %dx%d, %zu keypoints\n",
+                obj_state.reference_image.cols, obj_state.reference_image.rows,
+                obj_state.reference_keypoints.size());
+    
+    return true;
 }
 
 void receive_intrinsics(Intrinsics_C intr) {
     obj_state.intrinsics = intr;
     obj_state.has_intrinsics = true;
-    printf("[C++] Intrinsics received: fx=%.2f fy=%.2f cx=%.2f cy=%.2f w=%d h=%d\n",
-           intr.fx, intr.fy, intr.cx, intr.cy, intr.width, intr.height);
-    if (!obj_state.object_points_initialized) {
-        setupObjectPoints();
+
+    std::printf("[C++] Intrinsics received: "
+                "fx=%.2f fy=%.2f cx=%.2f cy=%.2f w=%d h=%d\n",
+                intr.fx, intr.fy, intr.cx, intr.cy, intr.width, intr.height);
+
+    // 초기화
+    if (!obj_state.reference_loaded) {
+        setupReferenceData();
+        setupFeatureDetector();
     }
 }
 
-void cal_pose_coord() {
-    if (!obj_state.has_intrinsics || !obj_state.object_points_initialized) {
-        send_calculate_coordinate_to_swift(0,0,0);
-        return;
+std::vector<cv::Point2f> findCorrespondingPoints(
+    const std::vector<cv::DMatch>& good_matches,
+    const std::vector<cv::KeyPoint>& current_keypoints,
+    std::vector<cv::Point3f>& matched_3d_points
+) {
+    std::vector<cv::Point2f> matched_2d_points;
+    matched_3d_points.clear();
+    
+    const float PROXIMITY_THRESHOLD = 30.0f; // 픽셀 단위
+    
+    for (const auto& match : good_matches) {
+        // 현재 프레임의 매칭된 키포인트
+        cv::Point2f current_pt = current_keypoints[match.queryIdx].pt;
+        
+        // 참조 이미지의 매칭된 키포인트
+        cv::Point2f ref_pt = obj_state.reference_keypoints[match.trainIdx].pt;
+        
+        // 참조 이미지의 키포인트와 가장 가까운 사전 정의된 포인트 찾기
+        float min_dist = std::numeric_limits<float>::max();
+        int best_idx = -1;
+        
+        for (size_t i = 0; i < obj_state.reference_pixels.size(); ++i) {
+            float dist = cv::norm(ref_pt - obj_state.reference_pixels[i]);
+            std::printf("[C++] Distance to ref_pixel[%zu]: %.2f\n", i, dist);
+            if (dist < min_dist && dist < PROXIMITY_THRESHOLD) {
+                min_dist = dist;
+                best_idx = static_cast<int>(i);
+            }
+        }
+        
+        if (best_idx >= 0) {
+            matched_2d_points.push_back(current_pt);
+            matched_3d_points.push_back(obj_state.object_3d_points[best_idx]);
+            
+            std::printf("[C++] Match found: ref(%.1f,%.1f) -> current(%.1f,%.1f) -> 3D(%d)\n",
+                       ref_pt.x, ref_pt.y, current_pt.x, current_pt.y, best_idx);
+        }
     }
 
-    size_t P = obj_state.touchPoints.size();
-    size_t M = obj_state.objectPoints.size();
-    size_t N = std::min(P, M);
-    if (N != 8) {
-        printf("[C++] Not enough points for PnP: %zu (need ≥4)\n", N);
-        send_calculate_coordinate_to_swift(0,0,0);
-        return;
-    }
-
-    // 2D 및 3D 대응점 준비
-    std::vector<cv::Point2f> imgPts;
-    std::vector<cv::Point3f> objPts;
-    imgPts.reserve(N);
-    objPts.reserve(N);
-    for (size_t i = 0; i < N; ++i) {
-        // touchPoints는 이미 픽셀 좌표로 저장됨
-        float pixelX = obj_state.touchPoints[i].x;
-        float pixelY = obj_state.touchPoints[i].y;
-        imgPts.emplace_back(pixelX, pixelY);
-        objPts.push_back(obj_state.objectPoints[i]);
-    }
-
-    // 카메라 매트릭스
-    cv::Mat cameraMatrix = (cv::Mat_<double>(3,3) <<
-        obj_state.intrinsics.fx, 0, obj_state.intrinsics.cx,
-        0, obj_state.intrinsics.fy, obj_state.intrinsics.cy,
-        0, 0, 1);
-    cv::Mat distCoeffs = cv::Mat::zeros(1,5,CV_64F);
-
-    cv::Mat rvec, tvec;
-    bool ok = cv::solvePnP(objPts, imgPts, cameraMatrix, distCoeffs, rvec, tvec, false, cv::SOLVEPNP_ITERATIVE);
-    if (!ok) {
-        printf("[C++] solvePnP failed\n");
-        send_calculate_coordinate_to_swift(0,0,0);
-        return;
-    }
-
-    // tvec은 cm 단위로 가정
-    float x_cm = tvec.at<double>(0);
-    float y_cm = tvec.at<double>(1);
-    float z_cm = tvec.at<double>(2);
-    printf("[C++] PnP: x=%.1fcm y=%.1fcm z=%.1fcm\n", x_cm, y_cm, z_cm);
-    send_calculate_coordinate_to_swift(x_cm, y_cm, z_cm);
-
-    // 디버깅: 투영 포인트와 터치 포인트 비교 (픽셀 단위)
-    std::vector<cv::Point2f> projectedPts;
-    cv::projectPoints(objPts, rvec, tvec, cameraMatrix, distCoeffs, projectedPts);
-    for (size_t i = 0; i < N; ++i) {
-        float dx = projectedPts[i].x - imgPts[i].x;
-        float dy = projectedPts[i].y - imgPts[i].y;
-        float error = std::sqrt(dx*dx + dy*dy);
-        printf("[C++] Point %zu: projected=(%.1f,%.1f), touch=(%.1f,%.1f), error=%.2f px\n",
-               i, projectedPts[i].x, projectedPts[i].y, imgPts[i].x, imgPts[i].y, error);
-    }
+    return matched_2d_points;
 }
 
-void receive_camera_frame(
-      void* baseAddress,
-      int width, int height,
-      int bytesPerRow,
-      const KeyPoints_C* points,
-      int pointCount)
+
+void drawMatchedKeypoints(cv::Mat& image,
+                          const std::vector<cv::KeyPoint>& keypoints,
+                          const std::vector<cv::DMatch>& matches)
 {
-    // 화면 버퍼 → Mat
+    std::vector<cv::KeyPoint> matched_keypoints;
+    for (const auto& match : matches) {
+        matched_keypoints.push_back(keypoints[match.queryIdx]);
+    }
+    cv::drawKeypoints(image, matched_keypoints, image, cv::Scalar(0, 0, 255), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
+}
+
+void performFeatureMatching() {
+    if (!obj_state.reference_loaded) {
+        std::printf("[C++] ERROR: reference image not loaded!\n");
+        send_calculate_coordinate_to_swift(0,0,0);
+        return;
+    }
+    
+    if (!obj_state.has_intrinsics || !obj_state.reference_loaded) {
+        send_calculate_coordinate_to_swift(0, 0, 0);
+        return;
+    }
+    
+    // ORB 검출기가 초기화되지 않았다면 오류 처리
+    if (!obj_state.orb_detector) {
+        std::printf("[C++] ERROR: Feature detector not initialized!\n");
+        send_calculate_coordinate_to_swift(0,0,0);
+        return;
+    }
+    
+    // 현재 프레임에서 특징점 추출
+    std::vector<cv::KeyPoint> current_keypoints;
+    cv::Mat current_descriptors;
+    
+    obj_state.orb_detector->detectAndCompute(
+        obj_state.gray_frame,
+        cv::noArray(),
+        current_keypoints,
+        current_descriptors
+    );
+    
+    if (current_descriptors.empty() || obj_state.reference_descriptors.empty()) {
+        std::printf("[C++] No descriptors found\n");
+        send_calculate_coordinate_to_swift(0, 0, 0);
+        return;
+    }
+    
+    // 특징점 매칭
+    std::vector<cv::DMatch> matches;
+    obj_state.matcher->match(current_descriptors, obj_state.reference_descriptors, matches);
+    
+    if (matches.size() < obj_state.MIN_MATCH_COUNT) {
+        std::printf("[C++] Insufficient matches: %zu < %d\n", matches.size(), obj_state.MIN_MATCH_COUNT);
+        send_calculate_coordinate_to_swift(0, 0, 0);
+        return;
+    }
+    
+    // 좋은 매칭만 필터링 (거리 기반)
+    std::sort(matches.begin(), matches.end());
+    std::vector<cv::DMatch> good_matches;
+    
+    const float ratio_threshold = 0.7f;
+    const int max_matches = static_cast<int>(matches.size() * ratio_threshold);
+    
+    for (int i = 0; i < std::min(max_matches, static_cast<int>(matches.size())); ++i) {
+        good_matches.push_back(matches[i]);
+    }
+    
+    // 매칭된 키포인트 시각화
+    drawMatchedKeypoints(obj_state.current_frame, current_keypoints, good_matches);
+    
+    std::printf("[C++] Good matches: %zu/%zu\n", good_matches.size(), matches.size());
+    
+    // 대응점 찾기
+    std::vector<cv::Point3f> matched_3d_points;
+    std::vector<cv::Point2f> matched_2d_points = findCorrespondingPoints(
+        good_matches, current_keypoints, matched_3d_points);
+    
+    if (matched_2d_points.size() < 4) {
+        std::printf("[C++] Insufficient corresponding points: %zu\n", matched_2d_points.size());
+        send_calculate_coordinate_to_swift(0, 0, 0);
+        return;
+    }
+    
+    // PnP 실행
+    cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) <<
+        obj_state.intrinsics.fx, 0.0, obj_state.intrinsics.cx,
+        0.0, obj_state.intrinsics.fy, obj_state.intrinsics.cy,
+        0.0, 0.0, 1.0);
+    cv::Mat distCoeffs = cv::Mat::zeros(1, 5, CV_64F);
+    
+    cv::Mat rvec, tvec;
+    bool success = false;
+    
+    if (matched_2d_points.size() >= 6) {
+        // RANSAC 사용
+        success = cv::solvePnPRansac(
+            matched_3d_points, matched_2d_points,
+            cameraMatrix, distCoeffs,
+            rvec, tvec, false, 100, 8.0f, 0.99
+        );
+    } else {
+        // 일반 PnP
+        success = cv::solvePnP(
+            matched_3d_points, matched_2d_points,
+            cameraMatrix, distCoeffs,
+            rvec, tvec, false, cv::SOLVEPNP_ITERATIVE
+        );
+    }
+    
+    if (!success) {
+        std::printf("[C++] PnP failed\n");
+        send_calculate_coordinate_to_swift(0, 0, 0);
+        return;
+    }
+    
+    // 재투영 에러 계산
+    std::vector<cv::Point2f> projected_points;
+    cv::projectPoints(matched_3d_points, rvec, tvec, cameraMatrix, distCoeffs, projected_points);
+    
+    
+    float total_error = 0.0f;
+    for (size_t i = 0; i < matched_2d_points.size(); ++i) {
+        float error = cv::norm(projected_points[i] - matched_2d_points[i]);
+        total_error += error;
+    }
+    float avg_error = total_error / matched_2d_points.size();
+    
+    if (avg_error > obj_state.MAX_REPROJECTION_ERROR) {
+        std::printf("[C++] High reprojection error: %.2f\n", avg_error);
+        send_calculate_coordinate_to_swift(0, 0, 0);
+        return;
+    }
+    
+    // 결과 저장 및 전송
+    obj_state.last_rvec = rvec.clone();
+    obj_state.last_tvec = tvec.clone();
+    obj_state.has_valid_pose = true;
+    obj_state.last_reprojection_error = avg_error;
+    
+    float x_cm = static_cast<float>(tvec.at<double>(0));
+    float y_cm = static_cast<float>(tvec.at<double>(1));
+    float z_cm = static_cast<float>(tvec.at<double>(2));
+    
+    std::printf("[C++] PnP SUCCESS: x=%.1fcm y=%.1fcm z=%.1fcm (error=%.2fpx, matches=%zu)\n",
+               x_cm, y_cm, z_cm, avg_error, matched_2d_points.size());
+    
+    send_calculate_coordinate_to_swift(x_cm, y_cm, z_cm);
+}
+
+void receive_camera_frame(void *baseAddress, int width, int height, int bytesPerRow,
+                          const KeyPoints_C *points, int pointCount) {
+    // 프레임 처리
     cv::Mat frameBGRA(height, width, CV_8UC4, baseAddress, bytesPerRow);
     obj_state.current_frame = frameBGRA.clone();
     cv::cvtColor(obj_state.current_frame, obj_state.gray_frame, cv::COLOR_BGRA2GRAY);
-
-    // 터치 포인트 갱신 (정규화된 좌표 -> 픽셀 좌표)
-    obj_state.touchPoints.clear();
-    printf("[C++] receive_camera_frame — pointCount=%d\n", pointCount);
-    for (int i = 0; i < pointCount; ++i) {
-        // 정규화된 좌표를 픽셀 좌표로 변환
-        float pixelX = points[i].x * obj_state.intrinsics.width;
-        float pixelY = points[i].y * obj_state.intrinsics.height;
-        printf("  Touch[%d]=(%.2f, %.2f) -> Pixel=(%.2f, %.2f)\n", i, points[i].x, points[i].y, pixelX, pixelY);
-        obj_state.touchPoints.push_back({pixelX, pixelY});
-    }
-
-    // PnP 계산
-    cal_pose_coord();
-
-    // Swift로 화면 전송
+    
+    // 특징점 매칭 및 PnP 수행
+    performFeatureMatching();
+    
+    // 처리된 프레임 전송
     send_processed_frame_to_swift(
         obj_state.current_frame.data,
         obj_state.current_frame.cols,
@@ -162,10 +360,16 @@ void receive_camera_frame(
     );
 }
 
-// 객체 정보 - 헤더 파일의 시그니처와 일치하도록 수정
 void receive_object_detection_info(struct DetectionObject_C obj) {
+    std::cout << "[C++] 객체 정보: " << obj.label << std::endl;
     if (!obj_state.has_intrinsics) return;
 
+    // 내부 파라미터가 설정되어 있어야 진행 가능
+    if (!obj_state.has_intrinsics) {
+        std::cerr << "[C++] Intrinsics not received yet.\n";
+        return;
+    }
+    
     int W = obj_state.intrinsics.width;
     int H = obj_state.intrinsics.height;
     // 정규화된 좌표 → 픽셀 좌표로 변환
@@ -177,7 +381,27 @@ void receive_object_detection_info(struct DetectionObject_C obj) {
     ) & cv::Rect(0, 0, W, H);
 
     obj_state.has_detection = true;
-    printf("[C++] Detection received: bbox(%d,%d,%d,%d)\n",
-           obj_state.last_bbox.x, obj_state.last_bbox.y,
-           obj_state.last_bbox.width, obj_state.last_bbox.height);
 }
+
+// 참조 이미지 로드 함수 (Swift에서 호출)
+void load_reference_image(const char* imagePath) {
+    std::string path(imagePath);
+    if (loadReferenceImage(path)) {
+        std::printf("[C++] Reference image loaded successfully\n");
+    } else {
+        std::printf("[C++] Failed to load reference image\n");
+    }
+}
+
+void reset_pose_tracking() {
+    obj_state.has_valid_pose = false;
+    obj_state.last_reprojection_error = 0.0f;
+    std::printf("[C++] Pose tracking reset\n");
+}
+
+bool is_pose_valid() {
+    return obj_state.has_valid_pose &&
+           obj_state.last_reprojection_error < obj_state.MAX_REPROJECTION_ERROR;
+}
+
+

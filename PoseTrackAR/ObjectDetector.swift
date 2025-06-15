@@ -67,13 +67,15 @@ class ObjectDetector {
             )
         }
         
+        print(detections)
+        
         if !detections.isEmpty {
             receive_object_detection_info(self.convertToCStruct(from: detections[0]))
-
         }
+        
 
         // 원본 이미지 크기에 맞게 시각화
-        let imageWithBoxes = image.drawDetections(detections)
+        // let imageWithBoxes = image.drawDetections(detections)
         // TODO: YOLO 객체 추적 이미지
         // processedImageSubject.send(imageWithBoxes)
         

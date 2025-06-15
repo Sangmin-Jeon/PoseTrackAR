@@ -50,12 +50,20 @@ class ARSessionManager: NSObject, ObservableObject {
     override init() {
         super.init()
         session.delegate = self
+        
+        if let imagePath = Bundle.main.path(forResource: "ref_img", ofType: "jpeg") {
+            load_reference_image(imagePath)
+        }
 
         let cfg = ARWorldTrackingConfiguration()
         cfg.frameSemantics = []          // 필요 옵션만
         cfg.videoFormat = ARWorldTrackingConfiguration.supportedVideoFormats
                 .filter { $0.framesPerSecond == 30 }  // 30fps로 제한
                 .first ?? ARWorldTrackingConfiguration.supportedVideoFormats[0]
+        
+        // 자동 포커스 끄기
+        // cfg.isAutoFocusEnabled = false
+
         session.run(cfg)
         
         pICancellable = processedImageSubject
@@ -110,7 +118,8 @@ extension ARSessionManager {
     
     
     func convertPixelBufferToUIImage(_ pixelBuffer: CVPixelBuffer) -> UIImage? {
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        var ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        ciImage = ciImage.oriented(.right)
         let context = CIContext()
         
         guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
