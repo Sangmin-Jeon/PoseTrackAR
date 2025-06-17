@@ -210,16 +210,17 @@ void performPoseEstimation() {
     cv::Mat dc = cv::Mat::zeros(1,5,CV_64F);
     cv::Mat rvec, tvec;
     std::vector<int> inliers;
-
     bool ok = cv::solvePnPRansac(
                      matched_3d_points,
                      matched_2d_points,
                      K, dc,
                      rvec, tvec,
-                     false,
-                     100, 4.0f, 0.99,
+                     false,     // useExtrinsicGuess
+                     100,       // iterationsCount
+                     5.0f,      // reprojectionError
+                     0.99,      // confidence
                      inliers,
-                     cv::SOLVEPNP_AP3P
+                     cv::SOLVEPNP_ITERATIVE
                  );
     
     if (!ok || inliers.size() < 4) {
@@ -244,7 +245,8 @@ void performPoseEstimation() {
     }
     
     drawMatchedLandmarks(inlier_points, inlier_indices);
-
+        
+    // #7 Pnp 결과 값 전송
     printf("[SUCCESS] PnP: x=%.1f, y=%.1f, z=%.1f | Inliers: %zu/%zu\n",
            x, y, z, inliers.size(), matched_2d_points.size());
     send_calculate_coordinate_to_swift(x, y, z);
