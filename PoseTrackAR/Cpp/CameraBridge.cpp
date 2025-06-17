@@ -44,7 +44,7 @@ static struct ObjState {
 
 // --- 내부 헬퍼 함수들 ---
 
-// 8개의 랜드마크 위치에서 고유한 '디지털 지문(descriptor)'을 생성하는 함수
+// 8개의 랜드마크 위치에서 고유한 descriptor을 생성하는 함수
 void setupLandmarkDescriptors() {
     if (obj_state.reference_gray.empty() || !obj_state.orb_detector) {
         printf("[ERROR] Cannot setup landmark descriptors.\n");
@@ -128,7 +128,7 @@ void performPoseEstimation() {
         return;
     }
 
-    // 1. 현재 프레임에서 ORB 특징점 전체 검출
+    // 1. 현재 프레임에서 특징점 검출
     std::vector<cv::KeyPoint> current_keypoints;
     cv::Mat current_descriptors;
     obj_state.orb_detector->detectAndCompute(obj_state.gray_frame, cv::noArray(), current_keypoints, current_descriptors);
@@ -138,54 +138,189 @@ void performPoseEstimation() {
         return;
     }
 
-    // 2. 현재 프레임의 특징점들과 8개의 랜드마크 '지문'을 비교 (knnMatch)
+    // 2. knnMatch와 비율 테스트로 좋은 매칭 필터링
     std::vector<std::vector<cv::DMatch>> knn_matches;
     obj_state.matcher->knnMatch(current_descriptors, obj_state.reference_landmark_descriptors, knn_matches, 2);
 
-    // 3. 비율 테스트(Ratio Test)로 좋은 매칭만 필터링
     std::vector<cv::DMatch> good_matches;
-    const float ratio_thresh = 0.75f;
+    const float ratio_thresh = 0.70f;
     for (const auto& match_pair : knn_matches) {
         if (match_pair.size() == 2 && match_pair[0].distance < match_pair[1].distance * ratio_thresh) {
             good_matches.push_back(match_pair[0]);
         }
     }
     
-    // 4. PnP를 위한 2D-3D 대응점 목록 생성
+    if (good_matches.size() < 4) { // MIN_MATCH_FOR_PNP
+        send_calculate_coordinate_to_swift(0, 0, 0);
+        return;
+    }
+    
+    // 3. 2D-3D 대응점 목록 생성
     std::vector<cv::Point3f> matched_3d_points;
     std::vector<cv::Point2f> matched_2d_points;
-    std::vector<int> matched_landmark_indices; // 시각화용
+    std::vector<int> matched_landmark_indices;
     
     for (const auto& match : good_matches) {
         matched_2d_points.push_back(current_keypoints[match.queryIdx].pt);
         matched_3d_points.push_back(obj_state.object_3d_points[match.trainIdx]);
         matched_landmark_indices.push_back(match.trainIdx);
     }
+    
+    // 4. PnP Ransac 수행
+    cv::Mat K = (cv::Mat_<double>(3,3) << obj_state.intrinsics.fx, 0, obj_state.intrinsics.cx, 0, obj_state.intrinsics.fy, obj_state.intrinsics.cy, 0,0,1);
+    cv::Mat dc = cv::Mat::zeros(1,5,CV_64F);
+    cv::Mat rvec, tvec;
+    std::vector<int> inliers;
 
-    if (matched_2d_points.size() < obj_state.MIN_MATCH_FOR_PNP) {
+    bool ok = cv::solvePnPRansac(matched_3d_points,
+                                 matched_2d_points,
+                                 K, dc, rvec, tvec,
+                                 false, 100, 4.0f, 0.99,
+                                 inliers,
+                                 cv::SOLVEPNP_AP3P);
+    
+    // 5. 결과 검증 및 시각화
+    if (!ok || inliers.size() < 4) { // inlier 개수도 확인
         send_calculate_coordinate_to_swift(0, 0, 0);
         return;
     }
     
-    drawMatchedLandmarks(matched_2d_points, matched_landmark_indices);
+    float x = tvec.at<double>(0);
+    float y = tvec.at<double>(1);
+    float z = tvec.at<double>(2);
     
-    // 5. solvePnPRansac으로 위치 계산
-    cv::Mat K = (cv::Mat_<double>(3,3) << obj_state.intrinsics.fx, 0, obj_state.intrinsics.cx, 0, obj_state.intrinsics.fy, obj_state.intrinsics.cy, 0,0,1);
-    cv::Mat dc = cv::Mat::zeros(1,5,CV_64F);
-    cv::Mat rvec, tvec;
-
-    bool ok = cv::solvePnPRansac(matched_3d_points, matched_2d_points, K, dc, rvec, tvec);
-    
-    if (!ok) {
-        send_calculate_coordinate_to_swift(0,0,0);
+    // 비현실적인 거리 필터링 (5m 이상이면 무시)
+    if (z < 1.0f || z > 500.0f) { // 1cm ~ 5m 범위 밖이면 비정상
+        send_calculate_coordinate_to_swift(0, 0, 0);
         return;
     }
+    
+    // PnP 계산 성공 후, 최종적으로 사용된 'inlier' 점들만 그리기
+    std::vector<cv::Point2f> inlier_points;
+    std::vector<int> inlier_indices;
+    for (int idx : inliers) {
+        inlier_points.push_back(matched_2d_points[idx]);
+        inlier_indices.push_back(matched_landmark_indices[idx]);
+    }
+    drawMatchedLandmarks(inlier_points, inlier_indices);
 
-    // 6. 결과 전송
-    float x = tvec.at<double>(0), y = tvec.at<double>(1), z = tvec.at<double>(2);
-    printf("[SUCCESS] PnP: x=%.1f, y=%.1f, z=%.1f (cm) | Matches: %zu\n", x, y, z, matched_2d_points.size());
+    // 6. 모든 검증을 통과한 경우에만 최종 결과 전송
+    printf("[SUCCESS] PnP: x=%.1f, y=%.1f, z=%.1f | Inliers: %zu/%zu\n",
+           x, y, z, inliers.size(), matched_2d_points.size());
     send_calculate_coordinate_to_swift(x, y, z);
 }
+
+// 키포인트 전부 표시하는 코드
+//void performPoseEstimation() {
+//    if (!obj_state.reference_initialized || !obj_state.has_intrinsics || obj_state.gray_frame.empty()) {
+//        send_calculate_coordinate_to_swift(0,0,0);
+//        return;
+//    }
+//
+//    // 1. 현재 프레임에서 ORB 특징점 전체 검출
+//    std::vector<cv::KeyPoint> current_keypoints;
+//    cv::Mat current_descriptors;
+//    obj_state.orb_detector->detectAndCompute(obj_state.gray_frame, cv::noArray(), current_keypoints, current_descriptors);
+//
+//    if (current_keypoints.empty() || obj_state.reference_landmark_descriptors.empty()) {
+//        send_calculate_coordinate_to_swift(0, 0, 0);
+//        return;
+//    }
+//
+//    // 2. knnMatch로 매칭 후 비율 테스트
+//    std::vector<std::vector<cv::DMatch>> knn_matches;
+//    obj_state.matcher->knnMatch(current_descriptors, obj_state.reference_landmark_descriptors, knn_matches, 2);
+//
+//    std::vector<cv::DMatch> good_matches;
+//    const float ratio_thresh = 0.65f; // 더 엄격하게 설정
+//    for (const auto& match_pair : knn_matches) {
+//        if (match_pair.size() == 2 && match_pair[0].distance < match_pair[1].distance * ratio_thresh) {
+//            good_matches.push_back(match_pair[0]);
+//        }
+//    }
+//    
+//    // 3. 2D-3D 대응점 생성
+//    std::vector<cv::Point3f> matched_3d_points;
+//    std::vector<cv::Point2f> matched_2d_points;
+//    std::vector<int> matched_landmark_indices;
+//    
+//    for (const auto& match : good_matches) {
+//        matched_2d_points.push_back(current_keypoints[match.queryIdx].pt);
+//        matched_3d_points.push_back(obj_state.object_3d_points[match.trainIdx]);
+//        matched_landmark_indices.push_back(match.trainIdx);
+//    }
+//
+//    if (matched_2d_points.size() < obj_state.MIN_MATCH_FOR_PNP) {
+//        send_calculate_coordinate_to_swift(0, 0, 0);
+//        return;
+//    }
+//    
+//    // 4. **개선된 RANSAC 파라미터로 PnP 수행**
+//    cv::Mat K = (cv::Mat_<double>(3,3) << obj_state.intrinsics.fx, 0, obj_state.intrinsics.cx,
+//                                         0, obj_state.intrinsics.fy, obj_state.intrinsics.cy,
+//                                         0, 0, 1);
+//    cv::Mat dc = cv::Mat::zeros(1,5,CV_64F);
+//    cv::Mat rvec, tvec;
+//    std::vector<int> inliers;
+//
+//    // RANSAC 파라미터 개선
+//    bool ok = cv::solvePnPRansac(
+//        matched_3d_points, matched_2d_points, K, dc, rvec, tvec,
+//        false,                    // useExtrinsicGuess
+//        1000,                     // iterationsCount (더 많이)
+//        3.0f,                     // reprojectionError (더 엄격하게)
+//        0.8,                      // confidence
+//        inliers,                  // inliers 인덱스 받기
+//        cv::SOLVEPNP_ITERATIVE    // 더 정확한 방법
+//    );
+//    
+//    if (!ok || inliers.size() < 4) { // inlier 개수도 확인
+//        send_calculate_coordinate_to_swift(0, 0, 0);
+//        return;
+//    }
+//
+//    // 5. **결과 검증 추가**
+//    float x = tvec.at<double>(0), y = tvec.at<double>(1), z = tvec.at<double>(2);
+//    float distance = sqrt(x*x + y*y + z*z);
+//    
+//    // 비현실적인 거리 필터링 (예: 5m 이상이면 무시)
+//    if (distance > 500.0f) { // 500cm = 5m
+//        printf("[WARNING] Unrealistic distance: %.1f cm, rejecting\n", distance);
+//        send_calculate_coordinate_to_swift(0, 0, 0);
+//        return;
+//    }
+//    
+//    // 6. **재투영 오차 검증**
+//    std::vector<cv::Point2f> projected_points;
+//    cv::projectPoints(matched_3d_points, rvec, tvec, K, dc, projected_points);
+//    
+//    float avg_error = 0.0f;
+//    for (size_t i = 0; i < inliers.size(); ++i) {
+//        int idx = inliers[i];
+//        float error = cv::norm(matched_2d_points[idx] - projected_points[idx]);
+//        avg_error += error;
+//    }
+//    avg_error /= inliers.size();
+//    
+//    if (avg_error > obj_state.MAX_REPROJECTION_ERROR) {
+//        printf("[WARNING] High reprojection error: %.2f, rejecting\n", avg_error);
+//        send_calculate_coordinate_to_swift(0, 0, 0);
+//        return;
+//    }
+//
+//    // 7. 시각화 (inlier만)
+//    std::vector<cv::Point2f> inlier_2d_points;
+//    std::vector<int> inlier_landmark_indices;
+//    for (int idx : inliers) {
+//        inlier_2d_points.push_back(matched_2d_points[idx]);
+//        inlier_landmark_indices.push_back(matched_landmark_indices[idx]);
+//    }
+//    drawMatchedLandmarks(inlier_2d_points, inlier_landmark_indices);
+//
+//    printf("[SUCCESS] PnP: x=%.1f, y=%.1f, z=%.1f (cm) | Inliers: %zu/%zu | Avg Error: %.2f\n",
+//           x, y, z, inliers.size(), matched_2d_points.size(), avg_error);
+//    send_calculate_coordinate_to_swift(x, y, z);
+//}
 
 // ===================================================================
 // C-API: Swift와 통신하는 인터페이스 함수들
