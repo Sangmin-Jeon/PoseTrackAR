@@ -64,7 +64,7 @@ public let poseSubject = PassthroughSubject<Pose, Never>()
 
 // --- 이동 평균 필터를 위한 전역 변수 ---
 private var poseSamples: [(x: Float, y: Float, z: Float)] = []
-private let sampleCount = 30 // 평균을 계산할 샘플 개수 (이 값을 조절하여 부드러움 조절 가능)
+private let sampleCount = 15 // 평균을 계산할 샘플 개수 (이 값을 조절하여 부드러움 조절 가능)
 
 // C++에서 좌표를 받을 때마다 호출되는 함수
 @_cdecl("send_calculate_coordinate_to_swift")
@@ -98,7 +98,7 @@ private func processAndAveragePose(x: Float, y: Float, z: Float) {
     
     // 충분한 샘플이 모였을 때만 평균 계산을 진행 (최소 10개 이상)
     // 이 조건을 만족하지 않으면 UI는 이전 값을 그대로 유지하게 됩니다.
-    guard poseSamples.count >= 10 else {
+    guard poseSamples.count >= 5 else {
         return
     }
 
