@@ -23,18 +23,22 @@ static struct ObjState {
     cv::Mat gray_frame;
     
     // --- 참조 데이터 ---
-    std::vector<cv::Point2f> reference_pixels;  // 랜드마크의 2D 픽셀 좌표
-    std::vector<cv::Point3f> object_3d_points;  // 랜드마크의 3D 실측 좌표
+    std::vector<cv::Point2f> reference_pixels;
+    std::vector<cv::Point3f> object_3d_points;
     
     // --- 특징점 데이터 (랜드마크 기반) ---
     cv::Mat reference_gray;
-    std::vector<cv::KeyPoint> reference_landmark_keypoints; // 8개 랜드마크의 대표 키포인트
-    cv::Mat reference_landmark_descriptors;         // 8개 랜드마크의 대표 기술자 (지문)
+    std::vector<cv::KeyPoint> reference_landmark_keypoints;
+    cv::Mat reference_landmark_descriptors;
     bool reference_initialized = false;
     
     // --- 특징점 검출 및 매칭 ---
     cv::Ptr<cv::ORB> orb_detector;
     cv::Ptr<cv::BFMatcher> matcher;
+    
+    // ✨ --- YOLO ROI를 위해 추가된 변수 --- ✨
+    cv::Rect last_bbox;      // YOLO가 찾은 마지막 바운딩 박스
+    bool has_detection = false; // 현재 프레임에 유효한 detection 정보가 있는지 여부
     
     // --- 상수 ---
     const float MAX_REPROJECTION_ERROR = 8.0f;
@@ -98,8 +102,8 @@ void setupReferenceData() {
         {1221.7f, 1687.4f}, {1660.2f, 1660.2f}, { 964.7f, 1593.6f}, {1920.2f, 1418.3f}
     };
     obj_state.object_3d_points = {
-        {0.0f,2.5f,0.0f}, {0.0f,4.5f,0.0f}, {-4.0f,6.6f,0.0f}, {4.0f,6.3f,0.0f},
-        {-1.5f,8.5f,0.0f}, {1.5f,8.5f,0.0f}, {-3.5f,9.0f,0.0f}, {4.0f,8.5f,0.0f}
+        {0.0f,2.5f,0.0f}, {0.0f,4.5f,0.0f}, {-4.0f,6.6f,-5.0f}, {4.0f,6.3f,-5.0f},
+        {-1.5f,8.5f,2.0f}, {1.5f,8.5f,2.0f}, {-3.5f,9.0f,-3.0f}, {4.0f,8.5f,-3.0f}
     };
 }
 
@@ -128,19 +132,43 @@ void performPoseEstimation() {
         return;
     }
 
-    // 1. 현재 프레임에서 특징점 검출
-    std::vector<cv::KeyPoint> current_keypoints;
-    cv::Mat current_descriptors;
-    obj_state.orb_detector->detectAndCompute(obj_state.gray_frame, cv::noArray(), current_keypoints, current_descriptors);
-
-    if (current_keypoints.empty() || obj_state.reference_landmark_descriptors.empty()) {
+    // ✨ --- 1. YOLO 탐지 여부 확인 --- ✨
+    // 만약 YOLO가 객체를 탐지하지 않았다면, PnP 계산을 시도조차 하지 않음
+    if (!obj_state.has_detection || obj_state.last_bbox.area() == 0) {
         send_calculate_coordinate_to_swift(0, 0, 0);
+        // 다음 프레임을 위해 탐지 상태 초기화
+        obj_state.has_detection = false;
         return;
     }
 
-    // 2. knnMatch와 비율 테스트로 좋은 매칭 필터링
+    // ✨ --- 2. ROI 설정 및 특징점 검출 --- ✨
+    // 전체 프레임이 아닌, YOLO가 찾은 바운딩 박스 영역만 잘라냄
+    cv::Mat roi_gray = obj_state.gray_frame(obj_state.last_bbox);
+    
+    std::vector<cv::KeyPoint> roi_keypoints;
+    cv::Mat roi_descriptors;
+    // ROI 안에서만 특징점 검출
+    obj_state.orb_detector->detectAndCompute(roi_gray, cv::noArray(), roi_keypoints, roi_descriptors);
+
+    // 검출 후, 다음 프레임을 위해 탐지 상태를 다시 초기화
+    obj_state.has_detection = false;
+
+    if (roi_keypoints.empty()) {
+        send_calculate_coordinate_to_swift(0, 0, 0);
+        return;
+    }
+    
+    // ✨ --- 3. 좌표 보정 --- ✨
+    // ROI 내부 좌표를 전체 이미지 좌표로 변환
+    std::vector<cv::KeyPoint> current_keypoints = roi_keypoints;
+    for(auto& kp : current_keypoints) {
+        kp.pt.x += obj_state.last_bbox.x;
+        kp.pt.y += obj_state.last_bbox.y;
+    }
+
+    // 4. knnMatch와 비율 테스트로 좋은 매칭 필터링
     std::vector<std::vector<cv::DMatch>> knn_matches;
-    obj_state.matcher->knnMatch(current_descriptors, obj_state.reference_landmark_descriptors, knn_matches, 2);
+    obj_state.matcher->knnMatch(roi_descriptors, obj_state.reference_landmark_descriptors, knn_matches, 2);
 
     std::vector<cv::DMatch> good_matches;
     const float ratio_thresh = 0.70f;
@@ -150,52 +178,44 @@ void performPoseEstimation() {
         }
     }
     
-    if (good_matches.size() < 4) { // MIN_MATCH_FOR_PNP
+    if (good_matches.size() < 4) {
         send_calculate_coordinate_to_swift(0, 0, 0);
         return;
     }
     
-    // 3. 2D-3D 대응점 목록 생성
+    // 5. 2D-3D 대응점 목록 생성
     std::vector<cv::Point3f> matched_3d_points;
     std::vector<cv::Point2f> matched_2d_points;
     std::vector<int> matched_landmark_indices;
     
     for (const auto& match : good_matches) {
+        // ✨ 주의: good_matches의 queryIdx는 roi_keypoints의 인덱스이지만,
+        // 우리는 current_keypoints (전체 좌표로 보정된)를 사용해야 함
         matched_2d_points.push_back(current_keypoints[match.queryIdx].pt);
         matched_3d_points.push_back(obj_state.object_3d_points[match.trainIdx]);
         matched_landmark_indices.push_back(match.trainIdx);
     }
     
-    // 4. PnP Ransac 수행
+    // 6. PnP Ransac 수행
     cv::Mat K = (cv::Mat_<double>(3,3) << obj_state.intrinsics.fx, 0, obj_state.intrinsics.cx, 0, obj_state.intrinsics.fy, obj_state.intrinsics.cy, 0,0,1);
     cv::Mat dc = cv::Mat::zeros(1,5,CV_64F);
     cv::Mat rvec, tvec;
     std::vector<int> inliers;
 
-    bool ok = cv::solvePnPRansac(matched_3d_points,
-                                 matched_2d_points,
-                                 K, dc, rvec, tvec,
-                                 false, 100, 4.0f, 0.99,
-                                 inliers,
-                                 cv::SOLVEPNP_AP3P);
+    bool ok = cv::solvePnPRansac(matched_3d_points, matched_2d_points, K, dc, rvec, tvec,
+                                 false, 100, 4.0f, 0.99, inliers, cv::SOLVEPNP_AP3P);
     
-    // 5. 결과 검증 및 시각화
-    if (!ok || inliers.size() < 4) { // inlier 개수도 확인
+    if (!ok || inliers.size() < 4) {
         send_calculate_coordinate_to_swift(0, 0, 0);
         return;
     }
     
-    float x = tvec.at<double>(0);
-    float y = tvec.at<double>(1);
-    float z = tvec.at<double>(2);
-    
-    // 비현실적인 거리 필터링 (5m 이상이면 무시)
-    if (z < 1.0f || z > 500.0f) { // 1cm ~ 5m 범위 밖이면 비정상
+    float x = tvec.at<double>(0), y = tvec.at<double>(1), z = tvec.at<double>(2);
+    if (z < 1.0f || z > 500.0f) {
         send_calculate_coordinate_to_swift(0, 0, 0);
         return;
     }
     
-    // PnP 계산 성공 후, 최종적으로 사용된 'inlier' 점들만 그리기
     std::vector<cv::Point2f> inlier_points;
     std::vector<int> inlier_indices;
     for (int idx : inliers) {
@@ -204,9 +224,9 @@ void performPoseEstimation() {
     }
     drawMatchedLandmarks(inlier_points, inlier_indices);
 
-    // 6. 모든 검증을 통과한 경우에만 최종 결과 전송
     printf("[SUCCESS] PnP: x=%.1f, y=%.1f, z=%.1f | Inliers: %zu/%zu\n",
            x, y, z, inliers.size(), matched_2d_points.size());
+    
     send_calculate_coordinate_to_swift(x, y, z);
 }
 
@@ -364,8 +384,32 @@ void receive_camera_frame(void *addr, int w, int h, int rowBytes, const KeyPoint
     send_processed_frame_to_swift(obj_state.current_frame.data, w, h, static_cast<int>(obj_state.current_frame.step));
 }
 
-// 이하 함수들은 현재 로직에서 사용되지 않지만, Swift와의 연결을 위해 남겨둡니다.
-void receive_object_detection_info(DetectionObject_C obj) {}
+// YOLO 객체 추적 정보
+void receive_object_detection_info(DetectionObject_C obj) {
+    if (!obj_state.has_intrinsics) return;
+
+    // 카메라 해상도 가져오기
+    int W = obj_state.intrinsics.width;
+    int H = obj_state.intrinsics.height;
+
+    // 1. 정규화된 YOLO 좌표 -> OpenCV 픽셀 좌표(cv::Rect)로 변환
+    obj_state.last_bbox = cv::Rect(
+        int(obj.bbox_x * W),
+        int(obj.bbox_y * H),
+        int(obj.bbox_width  * W),
+        int(obj.bbox_height * H)
+    );
+    
+    // 2. 바운딩 박스가 이미지 경계를 벗어나지 않도록 보정
+    obj_state.last_bbox &= cv::Rect(0, 0, W, H);
+
+    // 3. 탐지 성공 플래그 설정
+    obj_state.has_detection = true;
+    
+    // (디버깅용) 수신된 바운딩 박스 그리기
+    cv::rectangle(obj_state.current_frame, obj_state.last_bbox, cv::Scalar(0, 255, 0, 255), 5);
+}
+
 void reset_pose_tracking() {}
 bool is_pose_valid() { return false; }
 

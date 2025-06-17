@@ -30,7 +30,7 @@ struct KeyPoints {
 
 class ARSessionManager: NSObject, ObservableObject {
     private let session = ARSession()
-    // private let detector = ObjectDetector()
+    private let detector = ObjectDetector()
 
     /*
      intrinsics.columns.0 = [f_x, 0,     0]   // X축 방향 열
@@ -100,7 +100,7 @@ extension ARSessionManager: ARSessionDelegate {
             guard let image = self.convertPixelBufferToUIImage(pixelBuf) else { return }
             
             // TODO: 실시간 처리할때 사용
-            // self.detector.detect(image: image)
+            self.detector.detect(image: image)
         }
     }
     
