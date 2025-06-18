@@ -6,11 +6,10 @@
 //
 
 import SwiftUI
-import ARKit
-import ReplayKit
 
 let screenWidth = UIScreen.main.bounds.width
 let screenHeight = UIScreen.main.bounds.height
+
 
 struct ContentView: View {
 
@@ -22,3 +21,4 @@ struct ContentView: View {
         .edgesIgnoringSafeArea(.all)
     }
 }
+

@@ -20,13 +20,14 @@ struct ARObjectDistanceView: View {
             VStack {
                 // 측정된 거리 값을 표시
                 if let distance = distance {
-                    Text(String(format: "%.2f m", distance))
-                        .font(.largeTitle).fontWeight(.bold)
-                        .foregroundColor(.white)
-                        .padding()
-                        .background(Color.black.opacity(0.6))
-                        .cornerRadius(10)
-                } else {
+                    Text(String(format: "%.0f cm", distance * 100))
+                            .font(.largeTitle).fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .padding()
+                            .background(Color.black.opacity(0.6))
+                            .cornerRadius(10)
+                }
+                else {
                     Text("객체를 찾는 중...")
                         .font(.headline).foregroundColor(.white)
                         .padding().background(Color.black.opacity(0.6))
@@ -50,15 +51,16 @@ struct ARObjectDistanceView: View {
 
 // ARKit + RealityKit 뷰
 fileprivate struct LidarDistanceView: UIViewRepresentable {
-    
     @Binding var distance: Float?
     @Binding var detectedBox: CGRect?
-
+    
     func makeUIView(context: Context) -> ARView {
         let arView = ARView(frame: .zero)
         arView.session.delegate = context.coordinator
         
         let config = ARWorldTrackingConfiguration()
+        // sceneDepth 활성화
+        config.frameSemantics.insert(.sceneDepth)
         if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
             config.sceneReconstruction = .mesh
         }
@@ -68,99 +70,98 @@ fileprivate struct LidarDistanceView: UIViewRepresentable {
         context.coordinator.arView = arView
         return arView
     }
-
+    
     func updateUIView(_ uiView: ARView, context: Context) {}
-
+    
     func makeCoordinator() -> Coordinator {
         Coordinator(distance: $distance, detectedBox: $detectedBox)
     }
-
-    // ARKit 델리게이트와 로직 처리
+    
     class Coordinator: NSObject, ARSessionDelegate {
         @Binding var distance: Float?
         @Binding var detectedBox: CGRect?
         weak var arView: ARView?
+        private let objectDetectorActor = ObjectDetector()
+        private var isProcessingFrame = false
         
-        let objectDetector = ObjectDetector()
-        private var isProcessingFrame = false // 프레임 중복 처리 방지 플래그
-
         init(distance: Binding<Float?>, detectedBox: Binding<CGRect?>) {
             _distance = distance
             _detectedBox = detectedBox
         }
         
-        // 매 프레임 업데이트될 때 호출
         func session(_ session: ARSession, didUpdate frame: ARFrame) {
-            // 이미 다른 프레임을 처리 중이면 건너뛰기
             guard !isProcessingFrame else { return }
-            
             self.isProcessingFrame = true
             
-            // 현재 프레임의 이미지를 UIImage로 변환
-            let pixelBuffer = frame.capturedImage
-            var ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-            ciImage = ciImage.oriented(.right)
-            let uiImage = UIImage(ciImage: ciImage)
-            
-            // ObjectDetector로 객체 탐지 실행
-            objectDetector.detect(image: uiImage)
-            guard let arView = self.arView else {
-                self.isProcessingFrame = false
-                return
-            }
-            arView.debugOptions.insert(.showSceneUnderstanding)
-            
-            if let obj = objectDetector.detection_obj {
-                // 정규화된 바운딩 박스를 ARView의 픽셀 좌표로 변환
-                let viewRect = arView.bounds
-                let pixelBoundingBox = CGRect(
-                    x: obj.boundingBox.origin.x * viewRect.width,
-                    y: obj.boundingBox.origin.y * viewRect.height,
-                    width: obj.boundingBox.size.width * viewRect.width,
-                    height: obj.boundingBox.size.height * viewRect.height
-                )
+            Task {
+                var ciImage = CIImage(cvPixelBuffer: frame.capturedImage)
+                ciImage = ciImage.oriented(.right)
                 
-                // 거리 계산
-                let calculatedDistance = self.getDistance(to: pixelBoundingBox, in: arView)
-                
-                // UI 업데이트 (메인 스레드에서)
-                DispatchQueue.main.async {
-                    self.distance = calculatedDistance
-                    self.detectedBox = pixelBoundingBox
+                let context = CIContext()
+                guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
+                    await MainActor.run { self.isProcessingFrame = false }
+                    return
                 }
-                // 프레임 처리 완료
-                self.isProcessingFrame = false
+                let uiImage = UIImage(cgImage: cgImage)
                 
-            }
-            else {
-                // 감지된 객체가 없으면 UI 초기화
-                DispatchQueue.main.async {
-                    self.distance = nil
-                    self.detectedBox = nil
+                let detection = await objectDetectorActor.detect(image: uiImage)
+                
+                await MainActor.run {
+                    if let detectedObject = detection {
+                        self.processDetections(detectedObject)
+                    } else {
+                        self.distance = nil
+                        self.detectedBox = nil
+                    }
                     self.isProcessingFrame = false
                 }
             }
-            
         }
         
-        /// 특정 바운딩 박스의 중심까지의 거리를 계산하는 핵심 함수
+        private func processDetections(_ detections: DetectionObject) {
+            guard let arView = self.arView else { return }
+            
+            let viewRect = arView.bounds
+            let pixelBoundingBox = CGRect(
+                x: detections.boundingBox.origin.x * viewRect.width,
+                y: detections.boundingBox.origin.y * viewRect.height,
+                width: detections.boundingBox.size.width * viewRect.width,
+                height: detections.boundingBox.size.height * viewRect.height
+            )
+            
+            self.detectedBox = pixelBoundingBox
+            self.distance = self.getDistance(to: pixelBoundingBox, in: arView)
+        }
+        
+        /// 바운딩 박스 중심의 Raw Depth 맵을 읽어 거리를 계산하도록 변경
         private func getDistance(to boundingBox: CGRect, in arView: ARView) -> Float? {
-            let centerPoint = CGPoint(x: boundingBox.midX, y: boundingBox.midY)
-
-            guard let raycastQuery = arView.makeRaycastQuery(from: centerPoint, allowing: .existingPlaneGeometry, alignment: .any) else {
+            guard
+                let frame = arView.session.currentFrame,
+                let sceneDepth = frame.sceneDepth
+            else {
                 return nil
             }
             
-            let results = arView.session.raycast(raycastQuery)
-            guard let result = results.first else {
-                print("거리 결과 없음 ~~~")
-                return nil
-            }
-
-            let cameraPosition = arView.cameraTransform.translation
-            let hitPosition = simd_make_float3(result.worldTransform.columns.3)
+            let depthMap = sceneDepth.depthMap
+            CVPixelBufferLockBaseAddress(depthMap, .readOnly)
+            defer { CVPixelBufferUnlockBaseAddress(depthMap, .readOnly) }
             
-            return simd_distance(cameraPosition, hitPosition)
+            let width = CVPixelBufferGetWidth(depthMap)
+            let height = CVPixelBufferGetHeight(depthMap)
+            let bytesPerRow = CVPixelBufferGetBytesPerRow(depthMap)
+            
+            // 뎁스 맵 좌표로 변환
+            let cx = Int((boundingBox.midX / arView.bounds.width) * CGFloat(width))
+            let cy = Int((boundingBox.midY / arView.bounds.height) * CGFloat(height))
+            
+            // Float32 데이터 포인터
+            let rowStride = bytesPerRow / MemoryLayout<Float32>.size
+            guard let base = CVPixelBufferGetBaseAddress(depthMap) else { return nil }
+            let floatBuffer = base.assumingMemoryBound(to: Float32.self)
+            
+            // 해당 픽셀의 depth (미터 단위)
+            let depthAtCenter = floatBuffer[cy * rowStride + cx]
+            return depthAtCenter
         }
     }
 }

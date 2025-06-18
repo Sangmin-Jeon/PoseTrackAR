@@ -9,7 +9,6 @@ import Combine
 import CoreImage
 import UIKit
 
-let processedImageSubject = PassthroughSubject<UIImage, Never>()
 
 @_cdecl("send_processed_frame_to_swift")
 public func send_processed_frame_to_swift(
@@ -59,8 +58,6 @@ public struct Pose {
     public let z: Float
     public let distance: Float
 }
-
-public let poseSubject = PassthroughSubject<Pose, Never>()
 
 // --- 이동 평균 필터를 위한 전역 변수 ---
 private var poseSamples: [(x: Float, y: Float, z: Float)] = []

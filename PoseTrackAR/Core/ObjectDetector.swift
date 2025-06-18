@@ -9,6 +9,7 @@ import Foundation
 import UIKit
 import CoreML
 import YOLO
+import Combine
 
 
 
@@ -34,27 +35,36 @@ fileprivate let modelName = String("best")
 fileprivate let yolo_input_size: CGSize = CGSize(width: 640, height: 384)
 
 
-class ObjectDetector {
+actor ObjectDetector {
     private var detector: YOLO?
     var detection_obj: DetectionObject?
     
     init() {
-        let _ = YOLO(modelName, task: .detect) { [weak self] result in
-            guard let self = self else { return }
-            switch result {
-            case .success(let yolo):
-                self.detector = yolo
-                print("모델 로딩 성공")
-            case .failure(let error):
-                print("모델 로딩 실패: \(error)")
+        let _ = YOLO(modelName, task: .detect) { result in
+            // actor의 상태를 non-isolated 클로저에서 안전하게 변경하기 위해 Task를 사용합니다.
+            Task { [weak self] in
+                guard let self = self else { return }
+                switch result {
+                case .success(let yolo):
+                    // 'await'를 사용하여 Actor에게 작업이 완료될 때까지 기다리도록 요청합니다.
+                    await self.assignDetector(yolo)
+                    
+                case .failure(let error):
+                    print("YOLO 모델 로딩 실패: \(error)")
+                }
             }
         }
     }
     
-    func detect(image: UIImage) {
+    private func assignDetector(_ newDetector: YOLO) {
+        self.detector = newDetector
+        print("YOLO 모델 로딩 성공")
+    }
+    
+    func detect(image: UIImage) async -> DetectionObject? {
         guard let detector = self.detector else {
             print("모델이 아직 로드되지 않았습니다.")
-            return
+            return nil
         }
         
         let resized = image.resized(to: yolo_input_size)
@@ -71,20 +81,15 @@ class ObjectDetector {
         print(detections)
         
         // 지금은 추적하는 객체가 1개밖에 없음
-        guard let obj = detections.first else { return }
+        guard let obj = detections.first else { return nil }
         
-        self.detection_obj = obj
+        // self.detection_obj = obj
         
         if !detections.isEmpty {
             receive_object_detection_info(self.convertToCStruct(from: obj))
         }
-        
-
-        // 원본 이미지 크기에 맞게 시각화
-        // let imageWithBoxes = image.drawDetections(detections)
-        // TODO: YOLO 객체 추적 이미지
-        // processedImageSubject.send(imageWithBoxes)
-        
+                
+        return obj
         
     }
     

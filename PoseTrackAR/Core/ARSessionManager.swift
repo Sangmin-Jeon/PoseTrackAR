@@ -28,6 +28,9 @@ struct KeyPoints {
 }
 
 
+let processedImageSubject = PassthroughSubject<UIImage, Never>()
+let poseSubject = PassthroughSubject<Pose, Never>()
+
 class ARSessionManager: NSObject, ObservableObject {
     private let session = ARSession()
     private let detector = ObjectDetector()
@@ -44,8 +47,7 @@ class ARSessionManager: NSObject, ObservableObject {
     @Published var keyPoints: [CGPoint] = []
     @Published var pose: Pose?
 
-    private var pICancellable: AnyCancellable?
-    private var pSCancellable: AnyCancellable?
+    private var cancellable = Set<AnyCancellable>()
 
     override init() {
         super.init()
@@ -66,41 +68,35 @@ class ARSessionManager: NSObject, ObservableObject {
 
         session.run(cfg)
         
-        pICancellable = processedImageSubject
+        // C++에서 보낸 이미지를 받아서 @Published 프로퍼티 업데이트
+        processedImageSubject
             .receive(on: DispatchQueue.main)
             .sink { [weak self] image in
-                guard let self = self else { return }
-                DispatchQueue.main.async {
-                    self.processedImage = image
-                }
+                self?.processedImage = image
             }
+            .store(in: &cancellable)
         
-        pSCancellable = poseSubject
+        // C++에서 보낸 Pose 정보를 받아서 @Published 프로퍼티 업데이트
+        poseSubject
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _pose in
-                guard let self = self else { return }
-                self.pose = _pose
-                
+                self?.pose = _pose
             }
+            .store(in: &cancellable)
     }
     
 }
 
 extension ARSessionManager: ARSessionDelegate {
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
-        let ins: simd_float3x3 = frame.camera.intrinsics
-        let res = frame.camera.imageResolution
-        let pixelBuf = frame.capturedImage
-        
-        self.receiveIntrinsicsToCpp(ins: ins, res: res)
-        self.receivePixelBufToCpp(pixelBuf)
-        
-        DispatchQueue.global(qos: .userInitiated).async {
-            // image 변환 등 시간 걸리는 작업은 여기서 처리
-            guard let image = self.convertPixelBufferToUIImage(pixelBuf) else { return }
-            
-            // TODO: 실시간 처리할때 사용
-            self.detector.detect(image: image)
+        Task {
+            guard let uiImage = self.convertPixelBufferToUIImage(frame.capturedImage),
+                  let _ = await self.detector.detect(image: uiImage) else { return }
+
+            // detection_obj로 last_bbox, has_detection 셋업 끝난 뒤 C++에 프레임 넘기기
+            self.receiveIntrinsicsToCpp(ins: frame.camera.intrinsics,
+                                        res: frame.camera.imageResolution)
+            self.receivePixelBufToCpp(frame.capturedImage)
         }
     }
     
