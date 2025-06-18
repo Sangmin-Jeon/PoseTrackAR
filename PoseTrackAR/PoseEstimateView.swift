@@ -21,56 +21,56 @@ struct PoseEstimateView: View {
                     .aspectRatio(contentMode: .fit)
                     .frame(maxWidth: screenWidth, maxHeight: screenHeight)
                     .contentShape(Rectangle())
-                    .onTapGesture { location in
-                        // 뷰 상의 터치 좌표
-                        let x_view = location.x
-                        let y_view = location.y
-                        
-                        // 뷰 전체 크기
-                        let viewW = geo.size.width
-                        let viewH = geo.size.height
-                        
-                        // AR 카메라 원본 해상도
-                        let camW = CGFloat(ins.intrinsics?.width ?? 1)
-                        let camH = CGFloat(ins.intrinsics?.height ?? 1)
-                        
-                        // 이미지와 뷰의 종횡비
-                        let imgAspect  = camW / camH
-                        let viewAspect = viewW / viewH
-                        
-                        // 화면에 실제 그려진 이미지 크기 계산
-                        let displayedWidth:  CGFloat
-                        let displayedHeight: CGFloat
-                        if imgAspect > viewAspect {
-                            displayedWidth  = viewW
-                            displayedHeight = viewW / imgAspect
-                        }
-                        else {
-                            displayedHeight = viewH
-                            displayedWidth  = viewH * imgAspect
-                        }
-                        
-                        // 이미지가 가운데 정렬되면서 생긴 여백(offset)
-                        let xOffset = (viewW  - displayedWidth ) * 0.5
-                        let yOffset = (viewH  - displayedHeight) * 0.5
-                        
-                        // 뷰 좌표 → 이미지 영역 내부 좌표로 변환
-                        let x_inImage = (x_view - xOffset) * (camW / displayedWidth)
-                        let y_inImage = (y_view - yOffset) * (camH / displayedHeight)
-                        
-                        // 화면 표시용
-                        show_keypoints.append(CGPoint(x: x_view, y: y_view))
-                        // PnP에 넘길 실제 카메라 픽셀 좌표
-                        ins.keyPoints.append(CGPoint(x: x_inImage, y: y_inImage))
-                    }
-                    .overlay(
-                        ForEach(Array(show_keypoints.enumerated()), id: \.offset) { _, point in
-                            Circle()
-                                .fill(Color.red)
-                                .frame(width: 12, height: 12)
-                                .position(point)
-                        }
-                    )
+//                    .onTapGesture { location in
+//                        // 뷰 상의 터치 좌표
+//                        let x_view = location.x
+//                        let y_view = location.y
+//                        
+//                        // 뷰 전체 크기
+//                        let viewW = geo.size.width
+//                        let viewH = geo.size.height
+//                        
+//                        // AR 카메라 원본 해상도
+//                        let camW = CGFloat(ins.intrinsics?.width ?? 1)
+//                        let camH = CGFloat(ins.intrinsics?.height ?? 1)
+//                        
+//                        // 이미지와 뷰의 종횡비
+//                        let imgAspect  = camW / camH
+//                        let viewAspect = viewW / viewH
+//                        
+//                        // 화면에 실제 그려진 이미지 크기 계산
+//                        let displayedWidth:  CGFloat
+//                        let displayedHeight: CGFloat
+//                        if imgAspect > viewAspect {
+//                            displayedWidth  = viewW
+//                            displayedHeight = viewW / imgAspect
+//                        }
+//                        else {
+//                            displayedHeight = viewH
+//                            displayedWidth  = viewH * imgAspect
+//                        }
+//                        
+//                        // 이미지가 가운데 정렬되면서 생긴 여백(offset)
+//                        let xOffset = (viewW  - displayedWidth ) * 0.5
+//                        let yOffset = (viewH  - displayedHeight) * 0.5
+//                        
+//                        // 뷰 좌표 → 이미지 영역 내부 좌표로 변환
+//                        let x_inImage = (x_view - xOffset) * (camW / displayedWidth)
+//                        let y_inImage = (y_view - yOffset) * (camH / displayedHeight)
+//                        
+//                        // 화면 표시용
+//                        show_keypoints.append(CGPoint(x: x_view, y: y_view))
+//                        // PnP에 넘길 실제 카메라 픽셀 좌표
+//                        ins.keyPoints.append(CGPoint(x: x_inImage, y: y_inImage))
+//                    }
+//                    .overlay(
+//                        ForEach(Array(show_keypoints.enumerated()), id: \.offset) { _, point in
+//                            Circle()
+//                                .fill(Color.red)
+//                                .frame(width: 12, height: 12)
+//                                .position(point)
+//                        }
+//                    )
             }
             .frame(maxWidth: screenWidth, maxHeight: screenHeight)
         } else {

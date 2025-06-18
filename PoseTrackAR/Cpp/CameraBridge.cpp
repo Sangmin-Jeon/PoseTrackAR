@@ -57,7 +57,7 @@ void setupLandmarkDescriptors() {
 
     for (size_t i = 0; i < obj_state.reference_pixels.size(); ++i) {
         cv::Point2f landmark_pixel = obj_state.reference_pixels[i];
-        int roi_size = 80; // ROI 크기를 좀 더 넉넉하게
+        int roi_size = 100; // ROI 크기를 좀 더 넉넉하게
         cv::Rect roi(landmark_pixel.x - roi_size / 2, landmark_pixel.y - roi_size / 2, roi_size, roi_size);
         roi &= cv::Rect(0, 0, obj_state.reference_gray.cols, obj_state.reference_gray.rows);
         if (roi.width <= 0 || roi.height <= 0) continue;
@@ -95,32 +95,52 @@ void setupLandmarkDescriptors() {
 
 // 2D/3D 포인트 매핑 데이터 설정
 void setupReferenceData() {
+    /*
+     ref_img size: 3024 × 4032
+     
+     Point 1: (1509, 2660)
+     Point 2: (1880, 1983)
+     Point 3: (877, 1993)
+     Point 4: (2067, 1807)
+     Point 5: (962, 1740)
+     Point 6: (1064, 1410)
+     Point 7: (2250, 2895)
+     Point 8: (1057, 2467)
+     Point 9: (2101, 2334)
+     */
     obj_state.reference_pixels = {
-        {1496.9f, 2757.9f},
-        {1481.8f, 2425.2f},
-        { 889.1f, 1965.6f},
-        {2119.8f, 2004.9f},
-        {1221.7f, 1687.4f},
-        {1660.2f, 1660.2f},
-        { 964.7f, 1593.6f},
-        {1920.2f, 1418.3f}
+        {1509.0f, 2660.0f}, // Point 1
+        {1880.0f, 1983.0f}, // Point 2
+        {877.0f,  1993.0f}, // Point 3
+        {2067.0f, 1807.0f}, // Point 4
+        {962.0f,  1740.0f}, // Point 5
+        {1064.0f, 1410.0f}, // Point 6
+        {2250.0f, 2895.0f}, // Point 7
+        {1057.0f, 2467.0f}  // Point 8
     };
     
+    /*
+     X: 좌/우 -> 양수(+) 방향: 오른쪽
+     Y: 높이(Up/Down) -> 양수(+) 방향: 위쪽 (Height)
+     Z: 깊이(Forward/Backward) -> 양수(+) 방향: 카메라에서 멀어지는 방향
+     */
     obj_state.object_3d_points = {
-        {0.0f,2.5f,0.0f},
-        {0.0f,4.5f,0.0f},
-        {-4.0f,6.6f,-5.0f},
-        {4.0f,6.3f,-5.0f},
-        {-1.5f,8.5f,2.0f},
-        {1.5f,8.5f,2.0f},
-        {-3.5f,9.0f,-3.0f},
-        {4.0f,8.5f,-3.0f}
+        {0.0f, 4.5f, 0.0f},
+        {2.3f, 7.5f, -2.0f},
+        {-4.0f, 7.4f, 2.0f},
+        {3.5f, 8.5f, 4.0f},
+        {-3.2f, 9.0f, 4.5f},
+        {-3.0f, 11.0f, 4.8f},
+        {3.8f, 1.7f, 3.0f},
+        {-3.3f, 5.0f, 3.0f},
+        {3.6f, 5.5f, 2.5f}
     };
+    
 }
 
 // ORB 검출기와 매처 설정
 void setupFeatureDetector() {
-    obj_state.orb_detector = cv::ORB::create(2000);
+    obj_state.orb_detector = cv::ORB::create(500);
     // knnMatch를 사용하기 위해 crossCheck는 false로 설정
     obj_state.matcher = cv::BFMatcher::create(cv::NORM_HAMMING, false);
 }
@@ -144,15 +164,32 @@ void performPoseEstimation() {
     }
 
     // #1. YOLO 탐지 여부 확인
-    // 만약 YOLO가 객체를 탐지하지 않았다면, PnP 계산을 시도조차 하지 않음
+    // 만약 YOLO가 객체를 탐지하지 않았다면, PnP 계산 하지 않음
     if (!obj_state.has_detection || obj_state.last_bbox.area() == 0) {
         send_calculate_coordinate_to_swift(0, 0, 0);
         obj_state.has_detection = false; // 다음 프레임을 위해 초기화
         return;
     }
+    
+    // YOLO 바운딩 박스를 얼마나 확장할지 결정하는 비율 (예: 1.2 = 20% 확장)
+    const float roi_scale_factor = 1.4f;
+
+    // 새로운 너비와 높이 계산
+    int new_width = static_cast<int>(obj_state.last_bbox.width * roi_scale_factor);
+    int new_height = static_cast<int>(obj_state.last_bbox.height * roi_scale_factor);
+
+    // 중심점을 유지하면서 새로운 x, y 좌표 계산
+    int new_x = obj_state.last_bbox.x - (new_width - obj_state.last_bbox.width) / 2;
+    int new_y = obj_state.last_bbox.y - (new_height - obj_state.last_bbox.height) / 2;
+
+    // 확장된 ROI 생성
+    cv::Rect expanded_roi(new_x, new_y, new_width, new_height);
+
+    // 확장된 ROI가 이미지 경계를 벗어나지 않도록 보정
+    expanded_roi &= cv::Rect(0, 0, obj_state.gray_frame.cols, obj_state.gray_frame.rows);
 
     // #2. ROI 설정 및 특징점 검출
-    cv::Mat roi_gray = obj_state.gray_frame(obj_state.last_bbox);
+    cv::Mat roi_gray = obj_state.gray_frame(expanded_roi);
     
     std::vector<cv::KeyPoint> roi_keypoints;
     cv::Mat roi_descriptors;

@@ -324,6 +324,7 @@
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PoseTrackAR/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "\"이 앱은 AR 기능을 위해 카메라 접근이 필요합니다.\"\n";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
