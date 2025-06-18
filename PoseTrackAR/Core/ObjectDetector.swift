@@ -36,6 +36,7 @@ fileprivate let yolo_input_size: CGSize = CGSize(width: 640, height: 384)
 
 class ObjectDetector {
     private var detector: YOLO?
+    var detection_obj: DetectionObject?
     
     init() {
         let _ = YOLO(modelName, task: .detect) { [weak self] result in
@@ -69,8 +70,13 @@ class ObjectDetector {
         
         print(detections)
         
+        // 지금은 추적하는 객체가 1개밖에 없음
+        guard let obj = detections.first else { return }
+        
+        self.detection_obj = obj
+        
         if !detections.isEmpty {
-            receive_object_detection_info(self.convertToCStruct(from: detections[0]))
+            receive_object_detection_info(self.convertToCStruct(from: obj))
         }
         
 

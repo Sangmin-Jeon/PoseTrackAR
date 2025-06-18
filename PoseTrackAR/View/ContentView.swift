@@ -16,8 +16,8 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            PoseEstimateView()
-            // ARObjectScanAndDetectView()
+            // PoseEstimateView()
+            ARObjectDistanceView()
         }
         .edgesIgnoringSafeArea(.all)
     }
