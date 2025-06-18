@@ -12,78 +12,71 @@ struct ARObjectDistanceView: View {
 
     var body: some View {
         ZStack {
-            // AR 뷰 및 로직
+            // MARK: - AR 뷰 (백그라운드)
             LidarDistanceView(distance: $distance, detectedBox: $detectedBox)
                 .edgesIgnoringSafeArea(.all)
 
-            // UI 오버레이
+            // MARK: - UI 오버레이
             VStack {
-                // 측정된 거리 값을 표시
-                if let distance = distance {
-                    Text(String(format: "%.0f cm", distance * 100))
-                            .font(.largeTitle).fontWeight(.bold)
-                            .foregroundColor(.white)
-                            .padding()
-                            .background(Color.black.opacity(0.6))
-                            .cornerRadius(10)
+                // 상단 거리 정보 표시
+                if let dist = distance {
+                    InfoPillView(
+                        text: String(format: "%.0f cm", dist * 100),
+                        iconName: "ruler.fill"
+                    )
+                } else {
+                    InfoPillView(
+                        text: "객체를 찾는 중...",
+                        iconName: "magnifyingglass"
+                    )
                 }
-                else {
-                    Text("객체를 찾는 중...")
-                        .font(.headline).foregroundColor(.white)
-                        .padding().background(Color.black.opacity(0.6))
-                        .cornerRadius(10)
-                }
-                
-                Spacer() // UI를 상단에 고정
+                Spacer()
             }
-            .padding(.top, 50)
-            
-            // 감지된 바운딩 박스를 화면에 표시
+            .padding(.top, 60)
+            .animation(.easeInOut, value: distance)
+
+            // 감지된 바운딩 박스 표시
             if let box = detectedBox {
-                Rectangle()
-                    .stroke(Color.red, lineWidth: 4)
-                    .frame(width: box.width, height: box.height)
-                    .position(x: box.midX, y: box.midY)
+                BoundingBoxView(box: box)
+                    .animation(.bouncy, value: box)
             }
         }
     }
 }
 
-// ARKit + RealityKit 뷰
+// MARK: - ARKit + RealityKit 뷰 (UIViewRepresentable)
 fileprivate struct LidarDistanceView: UIViewRepresentable {
     @Binding var distance: Float?
     @Binding var detectedBox: CGRect?
     
+    // (makeUIView, updateUIView, makeCoordinator 함수는 그대로 유지)
     func makeUIView(context: Context) -> ARView {
         let arView = ARView(frame: .zero)
         arView.session.delegate = context.coordinator
-        
         let config = ARWorldTrackingConfiguration()
-        // sceneDepth 활성화
-        config.frameSemantics.insert(.sceneDepth)
         if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
             config.sceneReconstruction = .mesh
         }
-        config.planeDetection = [.horizontal, .vertical]
-        
+        config.frameSemantics.insert(.sceneDepth) // sceneDepth 사용을 위해 추가
         arView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
         context.coordinator.arView = arView
         return arView
     }
-    
+
     func updateUIView(_ uiView: ARView, context: Context) {}
-    
+
     func makeCoordinator() -> Coordinator {
         Coordinator(distance: $distance, detectedBox: $detectedBox)
     }
-    
+
+    // MARK: - Coordinator
     class Coordinator: NSObject, ARSessionDelegate {
         @Binding var distance: Float?
         @Binding var detectedBox: CGRect?
         weak var arView: ARView?
         private let objectDetectorActor = ObjectDetector()
         private var isProcessingFrame = false
-        
+
         init(distance: Binding<Float?>, detectedBox: Binding<CGRect?>) {
             _distance = distance
             _detectedBox = detectedBox
@@ -108,7 +101,7 @@ fileprivate struct LidarDistanceView: UIViewRepresentable {
                 
                 await MainActor.run {
                     if let detectedObject = detection {
-                        self.processDetections(detectedObject)
+                        self.processDetections(detectedObject, in: frame)
                     } else {
                         self.distance = nil
                         self.detectedBox = nil
@@ -118,50 +111,109 @@ fileprivate struct LidarDistanceView: UIViewRepresentable {
             }
         }
         
-        private func processDetections(_ detections: DetectionObject) {
+        private func processDetections(_ detection: DetectionObject, in frame: ARFrame) {
             guard let arView = self.arView else { return }
             
             let viewRect = arView.bounds
             let pixelBoundingBox = CGRect(
-                x: detections.boundingBox.origin.x * viewRect.width,
-                y: detections.boundingBox.origin.y * viewRect.height,
-                width: detections.boundingBox.size.width * viewRect.width,
-                height: detections.boundingBox.size.height * viewRect.height
+                x: detection.boundingBox.origin.x * viewRect.width,
+                y: detection.boundingBox.origin.y * viewRect.height,
+                width: detection.boundingBox.size.width * viewRect.width,
+                height: detection.boundingBox.size.height * viewRect.height
             )
             
             self.detectedBox = pixelBoundingBox
-            self.distance = self.getDistance(to: pixelBoundingBox, in: arView)
+            self.distance = self.getDistance(to: pixelBoundingBox, in: frame, arView: arView)
         }
         
-        /// 바운딩 박스 중심의 Raw Depth 맵을 읽어 거리를 계산하도록 변경
-        private func getDistance(to boundingBox: CGRect, in arView: ARView) -> Float? {
-            guard
-                let frame = arView.session.currentFrame,
-                let sceneDepth = frame.sceneDepth
-            else {
-                return nil
-            }
+        // ★★★ Depth Map을 사용하도록 최적화된 getDistance 함수 ★★★
+        private func getDistance(to boundingBox: CGRect, in frame: ARFrame, arView: ARView) -> Float? {
+            guard let sceneDepth = frame.sceneDepth else { return nil }
             
             let depthMap = sceneDepth.depthMap
             CVPixelBufferLockBaseAddress(depthMap, .readOnly)
             defer { CVPixelBufferUnlockBaseAddress(depthMap, .readOnly) }
             
-            let width = CVPixelBufferGetWidth(depthMap)
-            let height = CVPixelBufferGetHeight(depthMap)
-            let bytesPerRow = CVPixelBufferGetBytesPerRow(depthMap)
+            let depthWidth = CVPixelBufferGetWidth(depthMap)
+            let depthHeight = CVPixelBufferGetHeight(depthMap)
             
-            // 뎁스 맵 좌표로 변환
-            let cx = Int((boundingBox.midX / arView.bounds.width) * CGFloat(width))
-            let cy = Int((boundingBox.midY / arView.bounds.height) * CGFloat(height))
+            // 뷰 좌표 -> 뎁스맵 좌표로 변환
+            let viewSize = arView.bounds.size
+            let depthPoint = CGPoint(
+                x: (boundingBox.midX / viewSize.width) * CGFloat(depthWidth),
+                y: (boundingBox.midY / viewSize.height) * CGFloat(depthHeight)
+            )
             
-            // Float32 데이터 포인터
-            let rowStride = bytesPerRow / MemoryLayout<Float32>.size
-            guard let base = CVPixelBufferGetBaseAddress(depthMap) else { return nil }
-            let floatBuffer = base.assumingMemoryBound(to: Float32.self)
+            // 뎁스맵의 해당 픽셀에서 깊이 값(미터) 읽기
+            let rowStride = CVPixelBufferGetBytesPerRow(depthMap) / MemoryLayout<Float32>.size
+            guard let baseAddress = CVPixelBufferGetBaseAddress(depthMap) else { return nil }
+            let floatBuffer = baseAddress.assumingMemoryBound(to: Float32.self)
             
-            // 해당 픽셀의 depth (미터 단위)
-            let depthAtCenter = floatBuffer[cy * rowStride + cx]
-            return depthAtCenter
+            let x = Int(depthPoint.x)
+            let y = Int(depthPoint.y)
+            
+            // 좌표가 뎁스맵 범위 내에 있는지 확인
+            guard x >= 0, x < depthWidth, y >= 0, y < depthHeight else { return nil }
+            
+            let depthAtCenter = floatBuffer[y * rowStride + x]
+            
+            // 유효한 깊이 값인지 확인 (0이면 보통 유효하지 않음)
+            return depthAtCenter > 0 ? depthAtCenter : nil
         }
+    }
+}
+
+
+// MARK: - 재사용 가능한 UI 컴포넌트들
+
+private struct InfoPillView: View {
+    let text: String
+    let iconName: String
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: iconName)
+            Text(text)
+                .fontWeight(.bold)
+        }
+        .font(.system(.headline, design: .rounded))
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial, in: Capsule())
+        .foregroundColor(.white)
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+}
+
+private struct BoundingBoxView: View {
+    let box: CGRect
+    private let cornerSize: CGFloat = 20
+    private let cornerLineWidth: CGFloat = 4
+    
+    var body: some View {
+        // 모서리만 강조하는 형태로 변경
+        Path { path in
+            // Top-left corner
+            path.move(to: CGPoint(x: box.minX, y: box.minY + cornerSize))
+            path.addLine(to: CGPoint(x: box.minX, y: box.minY))
+            path.addLine(to: CGPoint(x: box.minX + cornerSize, y: box.minY))
+            
+            // Top-right corner
+            path.move(to: CGPoint(x: box.maxX - cornerSize, y: box.minY))
+            path.addLine(to: CGPoint(x: box.maxX, y: box.minY))
+            path.addLine(to: CGPoint(x: box.maxX, y: box.minY + cornerSize))
+            
+            // Bottom-left corner
+            path.move(to: CGPoint(x: box.minX, y: box.maxY - cornerSize))
+            path.addLine(to: CGPoint(x: box.minX, y: box.maxY))
+            path.addLine(to: CGPoint(x: box.minX + cornerSize, y: box.maxY))
+            
+            // Bottom-right corner
+            path.move(to: CGPoint(x: box.maxX - cornerSize, y: box.maxY))
+            path.addLine(to: CGPoint(x: box.maxX, y: box.maxY))
+            path.addLine(to: CGPoint(x: box.maxX, y: box.maxY - cornerSize))
+        }
+        .stroke(Color.red, style: StrokeStyle(lineWidth: cornerLineWidth, lineCap: .round, lineJoin: .round))
+        .shadow(color: .red.opacity(0.8), radius: 5, x: 0, y: 0)
     }
 }
