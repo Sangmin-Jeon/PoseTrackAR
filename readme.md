@@ -6,7 +6,18 @@
 본 영상은 이 프로젝트의 핵심 목표인 '단일 카메라 기반 거리 추정'의 정확도를 시각적으로 검증하기 위한 것입니다.   
 solvePnP 알고리즘을 통해 얻은 추정치와, LiDAR로 측정한 고정밀 Depth Map 실측값을 비교하여 성능을 평가합니다.
 
-<video src="https://github.com/user-attachments/assets/3eb5aede-fb09-4ec4-b6b0-3ace83859130" width="100%" autoplay muted loop></video>
+<table>
+  <tr>
+    <td align="center" valign="top">
+      <img src="https://github.com/user-attachments/assets/340793bf-b7a6-4821-933d-6727794742e6" alt="LiDAR 실측치" height="650">
+    </td>
+    <td align="center" valign="top">
+      <b>PnP & LiDAR 추정 결과</b><br>
+       <video src="https://github.com/user-attachments/assets/3eb5aede-fb09-4ec4-b6b0-3ace83859130" autoplay muted loop></video>
+    </td>
+  </tr>
+</table>
+
 ## #1 프로젝트 목표
 
 이 프로젝트의 핵심 목표는 **아이폰의 단일 카메라만으로 특정 3D 객체와의 거리를 정밀하게 추정**하는 것입니다. 이를 위해 딥러닝 기술과 LiDAR 센서, 전통적인 컴퓨터 비전 알고리즘을 결합하여,   
@@ -63,7 +74,7 @@ PnP는 3D 기준점과 그에 해당하는 2D 이미지 점이 정확히 짝이�
     1.  **3D 모델 입체화:** `object_3d_points`에 실제 깊이를 반영한 Z좌표를 부여하여 평면이 아님을 명시.
     2.  **PnP 솔버 교체:** 모호성에 더 강건한 최신 솔버인 `SOLVEPNP_AP3P`로 교체하여 문제를 최종 해결.
 
-#### 문제 3: 엉뚱한 배경에서 PnP가 오작동하는 현상
+#### 문제 3: 객체가 없는 이미지에서 PnP가 오작동하는 현상
 - **증상:** 객체가 없어도 배경의 특정 무늬를 객체로 착각하여 PnP가 계산되고, 값이 튀거나 `nan`이 출력됨.
 - **원인 분석:** **"탐지" 단계의 부재.** 시스템이 화면 전체를 대상으로 무작정 특징점 매칭을 시도했기 때문.
 - **해결책:** **YOLOv11을 이용한 "탐지 후 추정" 파이프라인 도입.** YOLO가 먼저 객체의 위치(ROI)를 찾아주면, 그 안에서만 특징점 매칭을 수행하도록 로직을 변경. 이로써 배경과의 오매칭을 원천적으로 차단하고 계산 성능을 향상시킴.
