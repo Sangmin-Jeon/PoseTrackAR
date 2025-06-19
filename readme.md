@@ -2,6 +2,7 @@
 
 <br>
 
+<video src="https://github.com/user-attachments/assets/3eb5aede-fb09-4ec4-b6b0-3ace83859130" width="100%" autoplay muted loop></video>
 ## #1 프로젝트 목표
 
 이 프로젝트의 핵심 목표는 **아이폰의 단일 카메라만으로 특정 3D 객체와의 거리를 정밀하게 추정**하는 것입니다. 이를 위해 딥러닝 기술과 LiDAR 센서, 전통적인 컴퓨터 비전 알고리즘을 결합하여,   
